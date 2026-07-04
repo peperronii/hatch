@@ -1,0 +1,640 @@
+<!DOCTYPE html>
+<html lang="en">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>hatch test suite</title>
+<style>
+	* { box-sizing: border-box; margin: 0; padding: 0; }
+	body {
+		font-family: system-ui, sans-serif;
+		max-width: 860px;
+		margin: 0 auto;
+		padding: 1.5rem 1rem 3rem;
+		color: #1a1a2e;
+		background: #f4f5f7;
+	}
+	h1 { font-size: 1.5rem; margin-bottom: 0.25rem; }
+	summary {
+		display: block;
+		padding: 0.5rem 0.75rem;
+		border-radius: 6px;
+		font-weight: 700;
+		margin-bottom: 1.25rem;
+	}
+	summary.pass { background: #2ecc7122; color: #27ae60; }
+	summary.fail { background: #e74c3c22; color: #c0392b; }
+	summary.running { background: #f39c1222; color: #e67e22; }
+
+	.test {
+		background: #fff;
+		border-radius: 8px;
+		padding: 0.75rem 1rem;
+		margin-bottom: 0.75rem;
+		border-left: 4px solid #ccc;
+		box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+		transition: border-color 0.2s;
+	}
+	.test.pass { border-color: #2ecc71; }
+	.test.fail { border-color: #e74c3c; }
+	.test.running { border-color: #f39c12; }
+	.test h3 { font-size: 0.95rem; display: flex; align-items: center; gap: 0.4rem; }
+	.test .desc { font-size: 0.8rem; color: #777; margin-top: 0.15rem; }
+	.badge {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		width: 1.25rem;
+		height: 1.25rem;
+		border-radius: 50%;
+		font-size: 0.8rem;
+		font-weight: 700;
+		background: #eee;
+		color: #999;
+		flex-shrink: 0;
+	}
+	.badge.pass { background: #2ecc7122; color: #27ae60; }
+	.badge.fail { background: #e74c3c22; color: #c0392b; }
+	.badge.running { background: #f39c1222; color: #e67e22; }
+
+	.stage {
+		margin-top: 0.5rem;
+		padding: 0.6rem 0.75rem;
+		background: #fafbfc;
+		border: 1px dashed #ddd;
+		border-radius: 6px;
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 0.5rem;
+		font-size: 0.85rem;
+		min-height: 2.5rem;
+	}
+	.src {
+		display: inline-block;
+		padding: 0.2rem 0.5rem;
+		background: #e8f0fe;
+		border-radius: 4px;
+		cursor: default;
+	}
+	.des {
+		display: inline-block;
+		padding: 0.25rem 0.5rem;
+		background: #fef3e2;
+		border-radius: 4px;
+		transition: outline 0.15s;
+	}
+	.des.loader { outline: 3px solid #f39c12; outline-offset: 1px; }
+	input, form {
+		font: inherit;
+		font-size: 0.85rem;
+		padding: 0.2rem 0.4rem;
+		border: 1px solid #ccc;
+		border-radius: 4px;
+	}
+	form { display: flex; gap: 0.4rem; align-items: center; }
+	.arrow { color: #bbb; }
+	.result {
+		font-size: 0.8rem;
+		color: #666;
+		margin-top: 0.35rem;
+	}
+</style>
+
+<body>
+<h1>hatch test suite</h1>
+<summary class="running">running ...</summary>
+
+<section class="test" id="t-basic">
+	<h3><span class="badge">○</span> basic GET swap</h3>
+	<p class="desc">target is replaced with response content</p>
+	<div class="stage">
+		<span class="src" data-name="a">src</span>
+		<span class="arrow">→</span>
+		<div id="t1-des" class="des">original</div>
+	</div>
+</section>
+
+<section class="test" id="t-debounce">
+	<h3><span class="badge">○</span> debounce</h3>
+	<p class="desc">3 rapid calls — only 1 fetch after 100ms idle</p>
+	<div class="stage">
+		<span class="src" data-name="db">src (×3)</span>
+	</div>
+</section>
+
+<section class="test" id="t-abort">
+	<h3><span class="badge">○</span> in-flight abort</h3>
+	<p class="desc">second hatch call aborts the still-loading first request</p>
+	<div class="stage">
+		<span class="src" data-name="ab">src</span>
+		<span class="arrow">→</span>
+		<div id="t3-des" class="des">original</div>
+	</div>
+</section>
+
+<section class="test" id="t-abort-pre">
+	<h3><span class="badge">○</span> abort before debounce</h3>
+	<p class="desc">aborting returned controller prevents the fetch entirely</p>
+	<div class="stage">
+		<span class="src" data-name="ap">src</span>
+		<span class="arrow">→</span>
+		<div id="t4-des" class="des">original</div>
+	</div>
+</section>
+
+<section class="test" id="t-oob">
+	<h3><span class="badge">○</span> out-of-band swaps</h3>
+	<p class="desc">response children with [id] replace matching DOM elements (except target)</p>
+	<div class="stage">
+		<span class="src" data-name="oob">src</span>
+		<span class="arrow">→</span>
+		<div id="t5-a" class="des">old A</div>
+		<div id="t5-b" class="des">old B</div>
+	</div>
+</section>
+
+<section class="test" id="t-oob-skip">
+	<h3><span class="badge">○</span> target skipped in OOB</h3>
+	<p class="desc">element matching des.id is not individually swapped</p>
+	<div class="stage">
+		<span class="src" data-name="sk">src</span>
+		<span class="arrow">→</span>
+		<div id="t6-x" class="des">old X</div>
+		<div id="t6-y" class="des">old Y</div>
+	</div>
+</section>
+
+<section class="test" id="t-post">
+	<h3><span class="badge">○</span> POST method</h3>
+	<p class="desc">method: 'POST' is passed to fetch</p>
+	<div class="stage">
+		<span class="src" data-name="po">src</span>
+		<span class="arrow">→</span>
+		<div id="t7-des" class="des">original</div>
+	</div>
+</section>
+
+<section class="test" id="t-query">
+	<h3><span class="badge">○</span> GET query string</h3>
+	<p class="desc">input name/value appended to URL as query params</p>
+	<div class="stage">
+		<input name="q" value="hello" class="src">
+		<div id="t8-des" class="des">original</div>
+	</div>
+</section>
+
+<section class="test" id="t-loader">
+	<h3><span class="badge">○</span> loader class</h3>
+	<p class="desc">.loader class added to target on call — yellow outline flash</p>
+	<div class="stage">
+		<span class="src" data-name="ld">src</span>
+		<span class="arrow">→</span>
+		<div id="t9-des" class="des">original</div>
+	</div>
+</section>
+
+<section class="test" id="t-def">
+	<h3><span class="badge">○</span> default target</h3>
+	<p class="desc">OOB swaps work when des defaults to src</p>
+	<div class="stage">
+		<span class="src" data-name="df">src</span>
+		<div id="t10-a" class="des">old A</div>
+		<div id="t10-b" class="des">old B</div>
+	</div>
+</section>
+
+<section class="test" id="t-empty">
+	<h3><span class="badge">○</span> empty response</h3>
+	<p class="desc">response with no body children removes the target</p>
+	<div class="stage">
+		<span class="src" data-name="em">src</span>
+		<span class="arrow">→</span>
+		<div id="t11-des" class="des">original</div>
+	</div>
+</section>
+
+<section class="test" id="t-err-des">
+	<h3><span class="badge">○</span> onerror: missing target</h3>
+	<p class="desc">onerror receives NotFoundError for bad selector</p>
+	<div class="stage">
+		<span class="src" data-name="er">src</span>
+		<span class="arrow">→</span>
+		<span style="color:#999">#gone</span>
+	</div>
+</section>
+
+<section class="test" id="t-err-fetch">
+	<h3><span class="badge">○</span> onerror: fetch failure</h3>
+	<p class="desc">onerror receives Error when fetch rejects</p>
+	<div class="stage">
+		<span class="src" data-name="ef">src</span>
+		<span class="arrow">→</span>
+		<div id="t13-des" class="des">original</div>
+	</div>
+</section>
+
+<section class="test" id="t-err-abort">
+	<h3><span class="badge">○</span> onerror: abort</h3>
+	<p class="desc">onerror receives AbortError when second call aborts first</p>
+	<div class="stage">
+		<span class="src" data-name="ea">src</span>
+		<span class="arrow">→</span>
+		<div id="t14-des" class="des">original</div>
+	</div>
+</section>
+
+<section class="test" id="t-timeout">
+	<h3><span class="badge">○</span> timeout</h3>
+	<p class="desc">fetch is aborted after 80ms timeout</p>
+	<div class="stage">
+		<span class="src" data-name="to">src</span>
+		<span class="arrow">→</span>
+		<div id="t15-des" class="des">original</div>
+	</div>
+</section>
+
+<section class="test" id="t-ctrl">
+	<h3><span class="badge">○</span> stores controls on src</h3>
+	<p class="desc">src element gets _hatchAbort, _hatchTimeout, _hatchDebounce</p>
+	<div class="stage">
+		<span class="src" data-name="ct">src</span>
+		<span class="arrow">→</span>
+		<div id="t16-des" class="des">original</div>
+	</div>
+</section>
+
+<section class="test" id="t-finish">
+	<h3><span class="badge">○</span> onfinish callback</h3>
+	<p class="desc">onfinish fires after DOM is updated</p>
+	<div class="stage">
+		<span class="src" data-name="fn">src</span>
+		<span class="arrow">→</span>
+		<div id="t17-des" class="des">original</div>
+	</div>
+</section>
+
+<section class="test" id="t-form-get">
+	<h3><span class="badge">○</span> form GET</h3>
+	<p class="desc">form data is serialized into query string</p>
+	<div class="stage">
+		<form id="t18-form">
+			<input name="q" value="hello">
+		</form>
+		<div id="t18-des" class="des">original</div>
+	</div>
+</section>
+
+<section class="test" id="t-form-post">
+	<h3><span class="badge">○</span> form POST</h3>
+	<p class="desc">form POST serializes body and sends Content-Type header</p>
+	<div class="stage">
+		<form id="t19-form">
+			<input name="q" value="world">
+		</form>
+		<div id="t19-des" class="des">original</div>
+	</div>
+</section>
+
+<section class="test" id="t-form-inval">
+	<h3><span class="badge">○</span> form validation</h3>
+	<p class="desc">invalid form (required field empty) blocks the request</p>
+	<div class="stage">
+		<form id="t20-form">
+			<input name="x" required value="">
+		</form>
+		<div id="t20-des" class="des">original</div>
+	</div>
+</section>
+
+<section class="test" id="t-ctrl-ext">
+	<h3><span class="badge">○</span> custom controls object</h3>
+	<p class="desc">controls option accepts an external object</p>
+	<div class="stage">
+		<span class="src" data-name="cx">src</span>
+		<span class="arrow">→</span>
+		<div id="t21-des" class="des">original</div>
+	</div>
+</section>
+
+<script src="hatch.js"></script>
+<script>
+(function () {
+	let summary = document.querySelector('summary');
+	let fetchCalls = [];
+
+	function textResponse(html) {
+		return Promise.resolve({ text: () => Promise.resolve(html) });
+	}
+
+	function delayedText(html, delay, signal) {
+		return new Promise(function (resolve, reject) {
+			if (signal && signal.aborted) return reject(new DOMException('Aborted', 'AbortError'));
+			let onAbort = () => reject(new DOMException('Aborted', 'AbortError'));
+			if (signal) signal.addEventListener('abort', onAbort);
+			setTimeout(() => {
+				if (signal) signal.removeEventListener('abort', onAbort);
+				resolve(textResponse(html));
+			}, delay);
+		});
+	}
+
+	let routes = {};
+	routes['/test/basic']     = '<p id="t1-des" class="des">replaced</p>';
+	routes['/test/debounce']  = '<span class="des">debounced</span>';
+	routes['/test/abort-1']   = '!delay:300:<div id="t3-des" class="des">first</div>';
+	routes['/test/abort-2']   = '<div id="t3-des" class="des">second</div>';
+	routes['/test/abort-pre'] = '!delay:200:<div id="t4-des" class="des">SHOULD NOT SHOW</div>';
+	routes['/test/oob']       = '<div id="t5-a" class="des">A</div><div id="t5-b" class="des">B</div>';
+	routes['/test/oob-skip']  = '<div id="t6-x" class="des">X</div><div id="t6-y" class="des">Y</div>';
+	routes['/test/post']      = '<div id="t7-des" class="des">posted</div>';
+	routes['/test/query']     = '<div id="t8-des" class="des">ok</div>';
+	routes['/test/loader']    = '!delay:100:<div id="t9-des" class="des">loaded</div>';
+	routes['/test/oob-def']   = '<div id="t10-a" class="des">A</div><div id="t10-b" class="des">B</div>';
+	routes['/test/empty']     = '<!DOCTYPE html><html><head></head><body></body></html>';
+	routes['/test/error']     = '!error';
+	routes['/test/timeout']   = '!delay:400:<div id="t15-des" class="des">SHOULD NOT SHOW</div>';
+	routes['/test/ctrl']      = '<div id="t16-des" class="des">ok</div>';
+	routes['/test/onfinish']  = '<div id="t17-des" class="des">done</div>';
+	routes['/test/form-get']  = '<div id="t18-des" class="des">got</div>';
+	routes['/test/form-post'] = '<div id="t19-des" class="des">posted</div>';
+	routes['/test/form-inval']= '<div id="t20-des" class="des">ok</div>';
+
+	window.fetch = function (url, init) {
+		let full = typeof url === 'string' ? url : url.url;
+		let s = full.split('?')[0];
+		let method = init && init.method ? init.method : 'GET';
+		let signal = init && init.signal ? init.signal : null;
+		fetchCalls.push({ url: s, full: full, method: method, signal: signal });
+
+		if (signal && signal.aborted) {
+			return Promise.reject(new DOMException('The operation was aborted', 'AbortError'));
+		}
+
+		let resp = routes[s];
+		if (!resp) return textResponse('');
+
+		if (resp === '!error') return Promise.reject(new Error('network failure'));
+
+		let m = resp.match(/^!delay:(\d+):(.+)$/s);
+		if (m) return delayedText(m[2], parseInt(m[1]), signal);
+
+		return textResponse(resp);
+	};
+
+	function badge(el) { return el.querySelector('.badge'); }
+	function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+	function pass(section, detail) {
+		section.classList.remove('running');
+		section.classList.add('pass');
+		badge(section).textContent = '✓';
+		badge(section).className = 'badge pass';
+		if (detail) {
+			let el = section.querySelector('.result') || section.appendChild(Object.assign(document.createElement('div'), { className: 'result' }));
+			el.textContent = detail;
+		}
+	}
+
+	function fail(section, detail) {
+		section.classList.remove('running');
+		section.classList.add('fail');
+		badge(section).textContent = '✗';
+		badge(section).className = 'badge fail';
+		if (detail) {
+			let el = section.querySelector('.result') || section.appendChild(Object.assign(document.createElement('div'), { className: 'result' }));
+			el.textContent = detail;
+		}
+	}
+
+	function running(section) {
+		section.classList.add('running');
+		badge(section).textContent = '●';
+		badge(section).className = 'badge running';
+	}
+
+	async function run() {
+		let tests = document.querySelectorAll('.test');
+
+		for (let s of tests) {
+			running(s);
+			try { await runTest(s); }
+			catch (e) { fail(s, e.message || String(e)); }
+		}
+
+		let allPass = true;
+		for (let s of tests) if (!s.classList.contains('pass')) { allPass = false; break; }
+		summary.className = allPass ? 'pass' : 'fail';
+		summary.textContent = allPass ? '✓ all tests passed' : '✗ some tests failed';
+	}
+
+	async function runTest(section) {
+		let id = section.id;
+
+		if (id === 't-basic') {
+			let src = section.querySelector('.src');
+			let des = document.getElementById('t1-des');
+			hatch(src, '/test/basic', des, { debounce: 0, timeout: 0 });
+			await sleep(50);
+			let el = document.getElementById('t1-des');
+			el && el.textContent === 'replaced' ? pass(section) : fail(section, `got "${el ? el.textContent : 'null'}" expected "replaced"`);
+		}
+
+		else if (id === 't-debounce') {
+			fetchCalls.length = 0;
+			let src = section.querySelector('.src');
+			hatch(src, '/test/debounce', undefined, { debounce: 100, timeout: 0 });
+			hatch(src, '/test/debounce', undefined, { debounce: 100, timeout: 0 });
+			hatch(src, '/test/debounce', undefined, { debounce: 100, timeout: 0 });
+			await sleep(250);
+			let n = fetchCalls.filter(c => c.url === '/test/debounce').length;
+			n === 1 ? pass(section) : fail(section, `${n} calls (expected 1)`);
+		}
+
+		else if (id === 't-abort') {
+			let src = section.querySelector('.src');
+			let des = document.getElementById('t3-des');
+			hatch(src, '/test/abort-1', des, { debounce: 0, timeout: 0 });
+			await sleep(80);
+			hatch(src, '/test/abort-2', des, { debounce: 0, timeout: 0 });
+			await sleep(400);
+			let el = document.getElementById('t3-des');
+			el && el.textContent === 'second' ? pass(section) : fail(section, `got "${el ? el.textContent : 'null'}"`);
+		}
+
+		else if (id === 't-abort-pre') {
+			let src = section.querySelector('.src');
+			let des = document.getElementById('t4-des');
+			let errCalled = false;
+			hatch(src, '/test/abort-pre', des, {
+				debounce: 100, timeout: 0,
+				onerror: err => { if (err.name === 'AbortError') errCalled = true; }
+			});
+			src._hatchAbort.abort();
+			await sleep(300);
+			let el = document.getElementById('t4-des');
+			el && el.textContent === 'original' && errCalled ? pass(section) : fail(section, `got "${el ? el.textContent : 'null'}" abort:${errCalled}`);
+		}
+
+		else if (id === 't-oob') {
+			let src = section.querySelector('.src');
+			hatch(src, '/test/oob', '#t5-b', { debounce: 0, timeout: 0 });
+			await sleep(50);
+			let a = document.getElementById('t5-a');
+			let b = document.getElementById('t5-b');
+			a && a.textContent === 'A' && b && b.textContent === 'B' ? pass(section) : fail(section, `a:"${a?.textContent}" b:"${b?.textContent}"`);
+		}
+
+		else if (id === 't-oob-skip') {
+			let src = section.querySelector('.src');
+			hatch(src, '/test/oob-skip', '#t6-y', { debounce: 0, timeout: 0 });
+			await sleep(50);
+			let x = document.getElementById('t6-x');
+			let y = document.getElementById('t6-y');
+			x && x.textContent === 'X' && y && y.textContent === 'Y' ? pass(section) : fail(section, `x:"${x?.textContent}" y:"${y?.textContent}"`);
+		}
+
+		else if (id === 't-post') {
+			let src = section.querySelector('.src');
+			hatch(src, '/test/post', '#t7-des', { debounce: 0, timeout: 0, method: 'POST' });
+			await sleep(50);
+			let calls = fetchCalls.filter(c => c.url === '/test/post');
+			let last = calls[calls.length - 1];
+			last && last.method === 'POST' ? pass(section) : fail(section, `method: ${last?.method ?? 'no fetch'}`);
+		}
+
+		else if (id === 't-query') {
+			fetchCalls.length = 0;
+			let src = section.querySelector('input');
+			hatch(src, '/test/query', '#t8-des', { debounce: 0, timeout: 0 });
+			await sleep(50);
+			let calls = fetchCalls.filter(c => c.url === '/test/query');
+			let hasQ = calls.length && calls[0].full.indexOf('?') !== -1;
+			hasQ ? pass(section, calls[0].full) : fail(section, calls.length ? calls[0].full : 'no fetch');
+		}
+
+		else if (id === 't-loader') {
+			let src = section.querySelector('.src');
+			let des = document.getElementById('t9-des');
+			hatch(src, '/test/loader', des, { debounce: 0, timeout: 0 });
+			await sleep(20);
+			des.classList.contains('loader') ? pass(section) : fail(section, 'no .loader class');
+		}
+
+		else if (id === 't-def') {
+			let src = section.querySelector('.src');
+			hatch(src, '/test/oob-def', undefined, { debounce: 0, timeout: 0 });
+			await sleep(50);
+			let a = document.getElementById('t10-a');
+			let b = document.getElementById('t10-b');
+			a && a.textContent === 'A' && b && b.textContent === 'B' ? pass(section) : fail(section, `a:"${a?.textContent}" b:"${b?.textContent}"`);
+		}
+
+		else if (id === 't-empty') {
+			let src = section.querySelector('.src');
+			hatch(src, '/test/empty', '#t11-des', { debounce: 0, timeout: 0 });
+			await sleep(50);
+			document.getElementById('t11-des') ? fail(section, 'element should have been removed') : pass(section);
+		}
+
+		else if (id === 't-err-des') {
+			let src = section.querySelector('.src');
+			let err = null;
+			hatch(src, '/test/any', '#gone', { debounce: 0, timeout: 0, onerror: e => { err = e; } });
+			await sleep(20);
+			err && err.name === 'NotFoundError' ? pass(section) : fail(section, `err: ${err?.name ?? 'null'}`);
+		}
+
+		else if (id === 't-err-fetch') {
+			let src = section.querySelector('.src');
+			let err = null;
+			hatch(src, '/test/error', '#t13-des', { debounce: 0, timeout: 0, onerror: e => { err = e; } });
+			await sleep(50);
+			err && err.message === 'network failure' ? pass(section) : fail(section, `err: ${err?.message ?? 'null'}`);
+		}
+
+		else if (id === 't-err-abort') {
+			let src = section.querySelector('.src');
+			let aborted = false;
+			hatch(src, '/test/abort-1', '#t14-des', { debounce: 0, timeout: 0,
+				onerror: e => { if (e.name === 'AbortError') aborted = true; } });
+			await sleep(80);
+			hatch(src, '/test/abort-2', '#t14-des', { debounce: 0, timeout: 0 });
+			await sleep(400);
+			aborted ? pass(section) : fail(section, 'AbortError not received');
+		}
+
+		else if (id === 't-timeout') {
+			let src = section.querySelector('.src');
+			let aborted = false;
+			hatch(src, '/test/timeout', '#t15-des', {
+				debounce: 0, timeout: 80,
+				onerror: e => { if (e.name === 'AbortError') aborted = true; }
+			});
+			await sleep(200);
+			let el = document.getElementById('t15-des');
+			el && el.textContent === 'original' && aborted ? pass(section) : fail(section, `got "${el?.textContent}" abort:${aborted}`);
+		}
+
+		else if (id === 't-ctrl') {
+			let src = section.querySelector('.src');
+			hatch(src, '/test/ctrl', '#t16-des', { debounce: 0, timeout: 50 });
+			let ok = src._hatchAbort instanceof AbortController
+				&& typeof src._hatchDebounce === 'number'
+				&& typeof src._hatchTimeout === 'number';
+			await sleep(80);
+			ok ? pass(section) : fail(section, 'missing _hatchAbort/_hatchTimeout/_hatchDebounce');
+		}
+
+		else if (id === 't-finish') {
+			let src = section.querySelector('.src');
+			let finished = false;
+			hatch(src, '/test/onfinish', '#t17-des', { debounce: 0, timeout: 0, onfinish: () => { finished = true; } });
+			await sleep(50);
+			let el = document.getElementById('t17-des');
+			el && el.textContent === 'done' && finished ? pass(section) : fail(section, `got "${el?.textContent}" finished:${finished}`);
+		}
+
+		else if (id === 't-form-get') {
+			let form = document.getElementById('t18-form');
+			hatch(form, '/test/form-get', '#t18-des', { debounce: 0, timeout: 0, method: 'GET' });
+			await sleep(50);
+			let calls = fetchCalls.filter(c => c.url === '/test/form-get');
+			let full = calls.length ? calls[calls.length - 1].full : '';
+			full.indexOf('q=hello') !== -1 ? pass(section, full) : fail(section, `URL: ${full || 'no fetch'}`);
+		}
+
+		else if (id === 't-form-post') {
+			let form = document.getElementById('t19-form');
+			hatch(form, '/test/form-post', '#t19-des', { debounce: 0, timeout: 0, method: 'POST' });
+			await sleep(50);
+			let calls = fetchCalls.filter(c => c.url === '/test/form-post');
+			let last = calls[calls.length - 1];
+			last && last.method === 'POST' ? pass(section) : fail(section, `method: ${last?.method ?? 'no fetch'}`);
+		}
+
+		else if (id === 't-form-inval') {
+			fetchCalls.length = 0;
+			let form = document.getElementById('t20-form');
+			let ret = hatch(form, '/test/form-inval', '#t20-des', { debounce: 0, timeout: 0 });
+			await sleep(20);
+			let calls = fetchCalls.filter(c => c.url === '/test/form-inval');
+			ret === false && calls.length === 0 ? pass(section) : fail(section, `returned:${ret} calls:${calls.length}`);
+		}
+
+		else if (id === 't-ctrl-ext') {
+			let src = section.querySelector('.src');
+			let ctrl = {};
+			hatch(src, '/test/basic', '#t21-des', { debounce: 0, timeout: 50, controls: ctrl });
+			let ok = ctrl._hatchAbort instanceof AbortController
+				&& typeof ctrl._hatchTimeout === 'number'
+				&& typeof ctrl._hatchDebounce === 'number';
+			await sleep(80);
+			ok ? pass(section) : fail(section, `props:${ctrl._hatchAbort ? 'ok' : 'no'}`);
+		}
+	}
+
+	run();
+})();
+</script>
+</body>
+</html>
