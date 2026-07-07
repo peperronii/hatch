@@ -76,6 +76,10 @@ function hatchFromTemplate(t, data) {
 					token.type = TokenType.OPERATOR;
 					token.data = '/';
 					return token;
+				case '%':
+					token.type = TokenType.OPERATOR;
+					token.data = '%';
+					return token;
 				case '^':
 					token.type = TokenType.OPERATOR;
 					token.data = '^';
@@ -218,7 +222,7 @@ function hatchFromTemplate(t, data) {
 					let id = operators.pop();
 					if (id === undefined) {
 						// Should not reach
-						return errorHelper(tokenizer.idx, "[ASSERT]: no preceding id for '[]' operation");
+						return errorHelper(tokenizer.idx, "[ASSERT]: no preceding id operator for '[]' operation");
 					}
 					let idx = operands.pop();
 					let num = data.getAll(id)[idx];
@@ -235,7 +239,7 @@ function hatchFromTemplate(t, data) {
 						return errorHelper(tokenizer.idx, "type of " + id + "[" + idx + "] is not a string" )
 					}
 				}
-				break;
+				continue;
 			case TokenType.NUM:
 				for (ch of token.data) {
 					if (ch < "0" || ch > "9") {
@@ -243,7 +247,7 @@ function hatchFromTemplate(t, data) {
 					}
 				}
 				operands.push(parseInt(num, 10));
-				break;
+				continue;
 			case TokenType.IDEN:
 				let next_token = tokenizer.peek();
 				if (next_token.type === TokenType.OPERATOR && next_token.data === '[') {
@@ -251,10 +255,27 @@ function hatchFromTemplate(t, data) {
 				} else {
 					operands.push(data.getAll(token.data).length);
 				}
-				break;
+				continue;
 			}
+			if (token.type !== undefined) {
+				return errorHelper(tokenizer.idx, "[ASSERT]: unknown token.type")
+			}
+			break;
 		}
+		let i = operators.length;
+		while (i > 0) {
+			i -= 1;
+			compute(operands, operators.pop());
+		}
+		if (operators.length !== 0) {
+			return { error : "[ASSERT]: left over operators: " + operators }
+		}
+		if (operands.length !== 1) {
+			return { error : "[ASSERT]: left over operands: " + operands }
+		}
+		return operands[0];
 	}
+
 	function cloneChildren(src, des, data, stack) {
 		for (const child of src.childNodes) {
 			let forExpr = child.getAttribute("hh-for");
@@ -262,6 +283,13 @@ function hatchFromTemplate(t, data) {
 				const i = forExpr.indexOf(':');
 				const varibale = str.slice(0, index).trim();
 				const expression = str.slice(index + 1).trim();
+				const range = forExpr.indexOf('..');
+				if (range === -1) {
+					data.getAll(expression);
+				} else {
+					// handle range syntax
+				}
+				
 			}
 			const clone = des.appendChild(child.cloneNode(false));
 			if (clone.nodeType !== Node.ELEMENT_NODE) {
@@ -271,7 +299,7 @@ function hatchFromTemplate(t, data) {
 			for (const attr of clone.getAttributeNames()) {
 
 			}
-			cloneChildren(child, clone);
+			cloneChildren(child, clone, data, stack);
 		}
 	}
 
