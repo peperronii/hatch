@@ -1,6 +1,6 @@
 function hatchEvaluateExpression(data, src) {
 
-	let pos = 0, vals = [], ops = [], wasVal = true;
+	let pos = 0, vals = [], ops = [], wasVal = false;
 
 	function err(msg) { return { error: "index: " + pos + " | " + msg }; }
 	function prec(ch) { return ({ '+':1, '-':1, '*':2, '/':2, '%':2, '^':3 })[ch] ?? -1; }
@@ -25,15 +25,20 @@ function hatchEvaluateExpression(data, src) {
 
 		if (c === undefined) return 'EOF';
 
-		if ('()[]'.indexOf(c) > -1 || prec(c) > -1) {
+		if (prec(c) > -1) {
+			if (!wasVal) return err("Expected an Operand");
+			wasVal = false;
 			pos += 1;
 			return c;
 		}
 
+		if ('()[]'.indexOf(c) > -1) {
+			pos += 1;
+			return c;
+		}
+
+		if (wasVal) return err("Expected an Operator");
 		if (c >= '0' && c <= '9') {
-			if (wasVal) {
-				err("Expected an Operator")
-			}
 			let num = '';
 			while (pos < src.length && src[pos] >= '0' && src[pos] <= '9') {
 				num = num + src[pos];
@@ -44,16 +49,22 @@ function hatchEvaluateExpression(data, src) {
 			if (n !== undefined && n.trim() !== '' && prec(n) === -1 && '()[]'.indexOf(n) === -1)
 				return err("Potential number literal contains non digits or decimals. ch: " + n);
 			vals.push(parseInt(num, 10));
+			wasVal = true;
 			return null;
 		}
 
 		let id = '';
 		while (pos < src.length && src[pos].trim() !== '' && '()[]+-*/%^'.indexOf(src[pos]) === -1)
 			id += src[pos++];
-		if (id === '') return err("Expected identifier or number before EOF");
 		skipWs();
-		if (peek() === '[') { ops.push(id); pos++; return '['; }
+
+		if (peek() === '[') {
+			ops.push(id, '[');
+			pos++;
+			return null;
+		}
 		vals.push(data.getAll(id).length);
+		wasVal = true
 		return null;
 	}
 
@@ -65,20 +76,16 @@ function hatchEvaluateExpression(data, src) {
 		if (token && token.error) return token;
 		if (token === 'EOF') break;
 		if (token === null) {
-			if (wasVal) return err("Expected an operator but got " + token);
-			wasVal = true;
 			continue;
 		}
 
 		if (prec(token) > -1) {
-			if (!wasVal) return err("Expected an operand but got " + token);
 			while (ops.length && prec(ops[ops.length-1]) >= prec(token)) calc(ops.pop());
 			ops.push(token);
-			wasVal = false;
 			continue;
 		}
 
-		if (token === '(' || token === '[') { ops.push(token); continue; }
+		if (token === '(') { ops.push(token); continue; }
 
 		if (token === ')') {
 			while (ops.length && prec(ops[ops.length-1]) !== -1) calc(ops.pop());
@@ -101,6 +108,8 @@ function hatchEvaluateExpression(data, src) {
 			vals.push(parseInt(num, 10));
 			continue;
 		}
+
+		if (token === '[') return err("No identifier preceding '['");
 	}
 
 	while (ops.length) calc(ops.pop());
