@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>hatch expression test suite</title>
+<style>
+	* { box-sizing: border-box; margin: 0; padding: 0; }
+	body { font-family: system-ui, sans-serif; max-width: 860px; margin: 0 auto; padding: 1.5rem 1rem 3rem; color: #1a1a2e; background: #f4f5f7; }
+	h1 { font-size: 1.5rem; margin-bottom: 0.5rem; }
+	#summary { display: block; padding: 0.5rem 0.75rem; border-radius: 6px; font-weight: 700; margin-bottom: 1.25rem; }
+	#summary.pass { background: #2ecc7122; color: #27ae60; }
+	#summary.fail { background: #e74c3c22; color: #c0392b; }
+	#summary.running { background: #f39c1222; color: #e67e22; }
+	h2 { font-size: 1.1rem; margin: 1.5rem 0 0.5rem; color: #555; border-bottom: 1px solid #ddd; padding-bottom: 0.3rem; }
+	.test { background: #fff; border-radius: 8px; padding: 0.5rem 0.75rem; margin-bottom: 0.5rem; border-left: 4px solid #ccc; font-size: 0.9rem; }
+	.test.pass { border-color: #2ecc71; }
+	.test.fail { border-color: #e74c3c; }
+	.badge { display: inline-flex; align-items: center; justify-content: center; width: 1.25rem; height: 1.25rem; border-radius: 50%; font-weight: 700; background: #eee; color: #999; }
+	.badge.pass { background: #2ecc7122; color: #27ae60; }
+	.badge.fail { background: #e74c3c22; color: #c0392b; }
+</style>
+
+<body>
+<h1>hatch expression test suite</h1>
+<p id="summary" class="running">running ...</p>
+
+<script src="hatch_test.js"></script>
+<script>
+(function () {
+	let s = document.getElementById('summary');
+	let total = 0, passed = 0;
+
+	function test(desc, expr, data, expected) {
+		total++;
+		let div = document.createElement('div');
+		div.className = 'test';
+		let ok, detail;
+		try {
+			let r = hatchEvaluateExpression(data, expr);
+			if (expected !== undefined && expected !== null && typeof expected === 'object' && 'error' in expected) {
+				let expMsg = expected.error;
+				ok = (typeof r === 'object' && r !== null && r.error !== undefined &&
+				      (typeof expMsg === 'string' ? r.error.indexOf(expMsg) !== -1 :
+				       expMsg instanceof RegExp ? expMsg.test(r.error) : true));
+				detail = ok ? r.error : 'got ' + JSON.stringify(r) + ', expected error "' + expMsg + '"';
+			} else {
+				ok = r === expected;
+				detail = ok ? '' + r : 'got ' + JSON.stringify(r) + ', expected ' + expected;
+			}
+		} catch (e) {
+			ok = false;
+			detail = 'exception: ' + e.message;
+		}
+		if (ok) {
+			div.className += ' pass';
+			passed++;
+			div.innerHTML = '<span class="badge pass">&#x2713;</span> ' + desc + ' = ' + detail;
+		} else {
+			div.className += ' fail';
+			div.innerHTML = '<span class="badge fail">&#x2717;</span> ' + desc + ' — ' + detail;
+		}
+		document.body.appendChild(div);
+	}
+
+	function group(name) {
+		let h2 = document.createElement('h2');
+		h2.textContent = name;
+		document.body.appendChild(h2);
+	}
+
+	// ---- FormData fixtures ----
+	let fd3 = new FormData();
+	fd3.append('items', '10');
+	fd3.append('items', '20');
+	fd3.append('items', '30');
+
+	let fdAB = new FormData();
+	fdAB.append('a', '1');
+	fdAB.append('a', '2');
+	fdAB.append('a', '3');
+	fdAB.append('b', '7');
+
+	let fdCombined = new FormData();
+	fdCombined.append('items', '10');
+	fdCombined.append('items', '20');
+	fdCombined.append('items', '30');
+	fdCombined.append('b', '7');
+
+	group('Basic arithmetic');
+	test('1+2', '1+2', fd3, 3);
+	test('3-1', '3-1', fd3, 2);
+	test('2*3', '2*3', fd3, 6);
+	test('6/2', '6/2', fd3, 3);
+	test('5%2', '5%2', fd3, 1);
+	test('2^3', '2^3', fd3, 8);
+	test('1+2+3+4', '1+2+3+4', fd3, 10);
+	test('2*3*4', '2*3*4', fd3, 24);
+
+	group('Operator precedence');
+	test('1+2*3', '1+2*3', fd3, 7);
+	test('2*3+4', '2*3+4', fd3, 10);
+	test('2+3*4-6/2', '2+3*4-6/2', fd3, 11);
+	test('2*3+4*5', '2*3+4*5', fd3, 26);
+	test('10/2+8/4', '10/2+8/4', fd3, 7);
+	test('2*3^2', '2*3^2', fd3, 18);
+
+	group('Parentheses');
+	test('(1+2)*3', '(1+2)*3', fd3, 9);
+	test('(1+2)*(3+4)', '(1+2)*(3+4)', fd3, 21);
+	test('((2+3)*4)', '((2+3)*4)', fd3, 20);
+	test('(1+(2*3))', '(1+(2*3))', fd3, 7);
+	test('(((5)))', '(((5)))', fd3, 5);
+	test('(10-3)*(8/2)', '(10-3)*(8/2)', fd3, 28);
+	test('(2+3)*(4+5)/(3-1)', '(2+3)*(4+5)/(3-1)', fd3, 22);
+
+	group('Exponentiation');
+	test('2^3+1', '2^3+1', fd3, 9);
+	test('1+2^3*2', '1+2^3*2', fd3, 17);
+	test('(1+2)^3', '(1+2)^3', fd3, 27);
+	test('2^3^2', '2^3^2', fd3, 64);
+
+	group('Modulo');
+	test('10%3', '10%3', fd3, 1);
+	test('10%3+1', '10%3+1', fd3, 2);
+	test('10%4*3', '10%4*3', fd3, 6);
+	test('(10%4)*3', '(10%4)*3', fd3, 6);
+	test('100%7%8', '100%7%8', fd3, 2);
+
+	group('Floor division');
+	test('7/3', '7/3', fd3, 2);
+	test('9/4', '9/4', fd3, 2);
+	test('12/5', '12/5', fd3, 2);
+	test('20/6', '20/6', fd3, 3);
+
+	group('Identifiers (length)');
+	test('items length', 'items', fd3, 3);
+	test('a length', 'a', fdAB, 3);
+	test('b length', 'b', fdAB, 1);
+	test('a+b', 'a+b', fdAB, 4);
+	test('a*2', 'a*2', fdAB, 6);
+	test('(a+1)*b', '(a+1)*b', fdAB, 4);
+
+	group('Array indexing');
+	test('items[0]', 'items[0]', fd3, 10);
+	test('items[1]', 'items[1]', fd3, 20);
+	test('items[2]', 'items[2]', fd3, 30);
+	test('b[0]', 'b[0]', fdAB, 7);
+
+	group('Compound expressions');
+	test('items[0]+items[1]', 'items[0]+items[1]', fd3, 30);
+	test('items[1]*items[2]', 'items[1]*items[2]', fd3, 600);
+	test('items[0]+b[0]', 'items[0]+b[0]', fdCombined, 17);
+	test('(items[0]+items[1])*items[2]', '(items[0]+items[1])*items[2]', fd3, 900);
+
+	group('Whitespace');
+	test('1 + 2', '1 + 2', fd3, 3);
+	test('  1+2  ', '  1+2  ', fd3, 3);
+	test('1   +   2', '1   +   2', fd3, 3);
+	test('( 1 + 2 ) * 3', '( 1 + 2 ) * 3', fd3, 9);
+	test('a + b', 'a + b', fdAB, 4);
+
+	group('Error cases');
+	test('empty expression', '', fd3, { error: 'Empty Expression' });
+	test('non-numeric in number literal', '1a', fd3, { error: /non digits or decimals/ });
+
+	s.className = passed === total ? 'pass' : 'fail';
+	s.textContent = passed === total
+		? 'PASS: all ' + total + ' tests passed (' + passed + '/' + total + ')'
+		: 'FAIL: ' + (total - passed) + ' of ' + total + ' tests failed';
+})();
+</script>
+</body>
+</html>
