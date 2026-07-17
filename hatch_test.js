@@ -1,118 +1,206 @@
-function hatchEvaluateExpression(data, src) {
+function hatchEvaluateExpression(data, context, src) {
 
-	let pos = 0, vals = [], ops = [], wasVal = false;
+	let pos = 0, vals = [], ops = [];
 
-	function err(msg) { return { error: "index: " + pos + " | " + msg }; }
-	function prec(ch) { return ({ '+':1, '-':1, '*':2, '/':2, '%':2, '^':3 })[ch] ?? -1; }
-	function peek() { return pos < src.length ? src[pos] : undefined; }
-	function skipWs() { while (pos < src.length && src[pos].trim() === '') pos++; }
+	function err(msg) {
+		return { error: "index: " + pos + " | " + msg };
+	}
+
+	function prec(ch) {
+		return ({ '+':1, '-':1, '*':2, '/':2, '%':2, '^':3 })[ch] ?? -1;
+	}
+
+	function peek() {
+		return pos < src.length ? src[pos] : undefined;
+	}
+
+	function skipWs() {
+		while (pos < src.length && src[pos].trim() === '') {
+			pos += 1;
+		}
+	}
+
+	function isInt(str) {
+		for (const ch of str) {
+			if (ch < "0" || ch > "9")  {
+				return false
+			}
+		}
+		return true;
+	}
 
 	function calc(op) {
 		let b = vals.pop(), a = vals.pop();
 		switch (op) {
-		case '+': vals.push(a + b); break;
-		case '-': vals.push(a - b); break;
-		case '*': vals.push(a * b); break;
-		case '/': let r = a % b; vals.push((a - r) / b); break;
-		case '%': vals.push(a % b); break;
-		case '^': vals.push(a ** b); break;
+		case '+':
+			vals.push(a + b);
+			return true;
+		case '-':
+			vals.push(a - b);
+			return true;
+		case '*':
+			vals.push(a * b);
+			return true;
+		case '/':
+			let r = a % b;
+			vals.push((a - r) / b);
+			return true;
+		case '%':
+			vals.push(a % b);
+			return true;
+		case '^':
+			vals.push(a ** b);
+			return true;
 		}
+		return false;
 	}
 
 	function readToken() {
 		skipWs();
 		let c = peek();
 
-		if (c === undefined) return 'EOF';
-
-		if (prec(c) > -1) {
-			if (!wasVal) return err("Expected an Operand");
-			wasVal = false;
-			pos += 1;
-			return c;
+		if (c === undefined) {
+			return { EOF: true };
 		}
 
-		if ('()[]'.indexOf(c) > -1) {
-			pos += 1;
-			return c;
-		}
-
-		if (wasVal) return err("Expected an Operator");
 		if (c >= '0' && c <= '9') {
 			let num = '';
 			while (pos < src.length && src[pos] >= '0' && src[pos] <= '9') {
 				num = num + src[pos];
 				pos += 1;
 			}
-			skipWs();
-			let n = peek();
-			if (n !== undefined && n.trim() !== '' && prec(n) === -1 && '()[]'.indexOf(n) === -1)
-				return err("Potential number literal contains non digits or decimals. ch: " + n);
-			vals.push(parseInt(num, 10));
-			wasVal = true;
-			return null;
+			return { number: num } ;
+		}
+
+		if (prec(c) > -1) {
+			pos += 1;
+			return { operator: c };
+		}
+
+		if ('()[]'.indexOf(c) > -1) {
+			pos += 1;
+			return { group: c };
 		}
 
 		let id = '';
-		while (pos < src.length && src[pos].trim() !== '' && '()[]+-*/%^'.indexOf(src[pos]) === -1)
-			id += src[pos++];
-		skipWs();
-
-		if (peek() === '[') {
-			ops.push(id, '[');
-			pos++;
-			return null;
+		while (pos < src.length && src[pos].trim() !== '' && '()[]+-*/%^'.indexOf(src[pos]) === -1) {
+			id = id + src[pos];
+			pos += 1;
 		}
-		vals.push(data.getAll(id).length);
-		wasVal = true
-		return null;
+		return { identifier: id };
 	}
 
 	skipWs();
-	if (peek() === undefined) return { error: "Empty Expression" };
+	if (peek() === undefined) { return { error: "Empty Expression" }; }
 
+	let token = null;
 	for (;;) {
-		let token = readToken();
-		if (token && token.error) return token;
-		if (token === 'EOF') break;
-		if (token === null) {
-			continue;
+		// Open Parentheses
+		token = readToken();
+		while (token.group && token.group === '(') {
+			ops.push('(');
+			token = readToken();
 		}
 
-		if (prec(token) > -1) {
-			while (ops.length && prec(ops[ops.length-1]) >= prec(token)) calc(ops.pop());
-			ops.push(token);
-			continue;
-		}
-
-		if (token === '(') { ops.push(token); continue; }
-
-		if (token === ')') {
-			while (ops.length && prec(ops[ops.length-1]) !== -1) calc(ops.pop());
-			if (!ops.length || ops.pop() !== '(') return err("No preceding '(' for ')'");
-			continue;
-		}
-
-		if (token === ']') {
-			while (ops.length && prec(ops[ops.length-1]) !== -1) calc(ops.pop());
-			if (!ops.length || ops.pop() !== '[') return err("No preceding '[' for ']'");
-			let id = ops.pop();
-			if (id === undefined) return err("No preceding id for '[]' operation");
-			let idx = vals.pop();
-			let num = data.getAll(id)[idx];
-			if (num === undefined) return err("Index out of range or invalid. array: " + id + " index: " + idx);
-			if (typeof num !== "string") return err("type of " + id + "[" + idx + "] is not a string");
-			for (const ch of num) {
-				if (ch < "0" || ch > "9") return err(id + "[" + idx + "] contains non digits or decimals. ch: " + ch);
+		// Operand
+		if (token.number) {
+			vals.push(parseInt(token.number, 10));
+		} else if (token.identifier) {
+			let id = token.identifier;
+			let val = context[id];
+			if (val) {
+				if (!isInt(val)) {
+					return err("Context value: " + id + " contains non digits or decimals. string: " + val);
+				}
+				vals.push(parseInt(val, 10));
+			} else {
+				val = data.getAll(id);
+				if (peek() === '[') {
+					if (val.length === 0) {
+						return err("Tried indexing id: " + id + " but it does not exist in the form data.");
+					}
+					ops.push(id);
+					ops.push('[');
+					readToken();
+					continue;
+				}
+				vals.push(val.length);
 			}
-			vals.push(parseInt(num, 10));
-			continue;
+		} else if (token.EOF) {
+			break;
+		} else {
+			return err("Expected an Operand but got: " + token);
 		}
 
-		if (token === '[') return err("No identifier preceding '['");
+		// Close Brackets
+		token = readToken();
+		while (token.group) {
+			switch (token.group) {
+			case ')':
+				while (ops.length && prec(ops[ops.length-1]) !== -1) {
+					calc(ops.pop());
+				}
+				if (!ops.length) {
+					return err("No preceding '(' for ')'");
+				}
+				let op = ops.pop();
+				if (op !== '(') {
+					return err("Unexpected Operator preceding ')': " + op);
+				}
+				break;
+			case ']':
+				while (ops.length && prec(ops[ops.length-1]) !== -1) {
+					calc(ops.pop());
+				}
+
+				if (!ops.length) {
+					return err("No preceding '[' for ']'");
+				}
+				let currentOp = ops.pop();
+				if (currentOp !== '[') {
+					return err("Unexpected Operator preceding ']': " + currentOp);
+				}
+
+				let id = ops.pop();
+				let arr = data.getAll(id);
+				let idx = vals.pop();
+				let val = arr[idx];
+				if (val === undefined) {
+					return err("Index out of range. id: " + id + " index: " + idx);
+				}
+				if (!(typeof val === "string" || val instanceof String)) {
+					return err("type of " + id + "[" + idx + "] is not a string");
+				}
+				for (const ch of val) {
+					if (ch < "0" || ch > "9") return err(id + "[" + idx + "] contains non digits or decimals. string: " + val);
+				}
+				vals.push(parseInt(val, 10));
+				break;
+			default:
+				return err("Expected an Operator but got: " + token);
+			}
+			token = readToken();
+		}
+
+		// Operator
+		if (token.operator) {
+			let op = token.operator;
+			if (prec(op) <= prec(ops[ops.length-1])) {
+				calc(ops.pop())
+			}
+			ops.push(op);
+		} else if (token.EOF) {
+			break;
+		} else {
+			return err("Expected an Operator but got: " + token);
+		}
 	}
 
-	while (ops.length) calc(ops.pop());
-	if (vals.length !== 1) return { error: "[ASSERT]: left over operands: " + vals };
+	while (ops.length) {
+		let op= ops.pop()
+		if (!calc(op)) {
+			return { error: "Unclosed '" + op + "'" };
+		}
+	}
 	return vals[0];
 }

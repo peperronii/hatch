@@ -30,13 +30,13 @@
 	let s = document.getElementById('summary');
 	let total = 0, passed = 0;
 
-	function test(desc, expr, data, expected) {
+	function test(desc, expr, data, expected, ctx) {
 		total++;
 		let div = document.createElement('div');
 		div.className = 'test';
 		let ok, detail;
 		try {
-			let r = hatchEvaluateExpression(data, expr);
+			let r = hatchEvaluateExpression(data, ctx || {}, expr);
 			if (expected !== undefined && expected !== null && typeof expected === 'object' && 'error' in expected) {
 				let expMsg = expected.error;
 				ok = (typeof r === 'object' && r !== null && r.error !== undefined &&
@@ -161,7 +161,15 @@
 
 	group('Error cases');
 	test('empty expression', '', fd3, { error: 'Empty Expression' });
-	test('non-numeric in number literal', '1a', fd3, { error: /non digits or decimals/ });
+	test('non-numeric in number literal', '1a', fd3, { error: /Expected an Operator/ });
+
+	group('Context values');
+	test('context value', 'x', fd3, 5, { x: '5' });
+	test('context in arithmetic', 'x+3', fd3, 8, { x: '5' });
+	test('context with FormData index', 'x+items[0]', fdCombined, 15, { x: '5' });
+	test('context overrides FormData', 'items', fd3, 100, { items: '100' });
+	test('multiple context values', 'a*b', fdAB, 15, { a: '3', b: '5' });
+	test('context non-integer error', 'x', fd3, { error: /non digits or decimals/ }, { x: 'abc' });
 
 	s.className = passed === total ? 'pass' : 'fail';
 	s.textContent = passed === total

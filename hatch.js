@@ -1,5 +1,4 @@
 function hatch(e, cfg) {	
-
 	e.preventDefault();
 
 	let form = e.target;
@@ -25,217 +24,219 @@ function hatch(e, cfg) {
 	let method = form.getAttribute("method") || "get";
 }
 
-function hatchEvaluateExpression(data, expression) {
-	const TokenType = Object.freeze({
-		OPERATOR: 1,
-		NUM:      2,
-		IDEN:     3,
-		EOF:      4,
-	});
+function hatchEvaluateExpression(data, context, src) {
 
-	class Tokenizer {
-		constructor(src) {
-			this.src = src;
-			this.idx = 0;
-			this.char = this.src[this.idx];
-		}
+	let pos = 0, vals = [], ops = [];
 
-		read() {
-			this.idx += 1;
-			this.char = this.src[this.idx];
-			return this.char;
-		}
-
-		// undefined = EOF
-		scan() {
-			const token = {};
-
-			// skip whitespaces or stop at EOF 
-			for (;;) {
-				if (this.char === undefined ) {
-					token.type = TokenType.EOF;
-					return token;
-				}
-				if (this.char.trim() !== '') break;
-				this.read();
-			}
-
-			if ('[(+-*/%^)]'.indexOf(this.char) > -1) {
-				token.type = TokenType.OPERATOR;
-				token.data = this.char;
-				this.read()
-				return token;
-			}
-
-			if (this.char >= '0' && this.char <= '9') {
-				token.type = TokenType.NUM;
-			} else {
-				token.type = TokenType.IDEN;
-			}
-			token.data = '';
-			for (;;) {
-				if ( this.char === undefined ||
-				     this.char.trim() === '' ||
-				     '[(+-*/%^)]'.indexOf(this.char) > -1)  {
-					break;
-				}
-				token.data = token.data + this.char;
-				this.read();
-			}
-			return token;
-		}
-
-		peek() {
-			let _idx = this.idx;
-			let _char = this.char;
-			let token = this.scan();
-			this.idx = _idx;
-			this.char = _char
-			return token;
-		}
+	function err(msg) {
+		return { error: "index: " + pos + " | " + msg };
 	}
 
-	let tokenizer = new Tokenizer(expression);
-
-	let operands = [];
-	let operators = [];
-
-	function errorHelper(idx, msg) { return { error: "index: " + idx + " | " + msg }; }
-	function compute(operands, operator) {
-		switch (operator) {
-		case '+':
-			operands.push(operands.pop() + operands.pop());
-			break;
-		case '-':
-			let sub = operands.pop()
-			let min = operands.pop()
-			operands.push(min - sub);
-			break;
-		case '*':
-			operands.push(operands.pop() * operands.pop());
-			break;
-		case '/':
-			let den = operands.pop();
-			let num = operands.pop();
-			let divrem = num % den;
-			// floor division
-			operands.push((num - divrem) / den);
-			break;
-		case '%':
-			let mod = operands.pop();
-			let div = operands.pop();
-			let modrem = div % mod;
-			operands.push(modrem);
-			break;
-		case '^':
-			let expo = operands.pop();
-			let base = operands.pop();
-			operands.push(base ** expo);
-			break;
-		}
-	}
-	function getPrecedence(ch) {
+	function prec(ch) {
 		return ({ '+':1, '-':1, '*':2, '/':2, '%':2, '^':3 })[ch] ?? -1;
 	}
 
-	if (tokenizer.peek().type === TokenType.EOF) return { error: "Empty Expression" }
+	function peek() {
+		return pos < src.length ? src[pos] : undefined;
+	}
+
+	function skipWs() {
+		while (pos < src.length && src[pos].trim() === '') {
+			pos += 1;
+		}
+	}
+
+	function isInt(str) {
+		for (const ch of str) {
+			if (ch < "0" || ch > "9")  {
+				return false
+			}
+		}
+		return true;
+	}
+
+	function calc(op) {
+		let b = vals.pop(), a = vals.pop();
+		switch (op) {
+		case '+':
+			vals.push(a + b);
+			return true;
+
+		case '-':
+			vals.push(a - b);
+			return true;
+
+		case '*':
+			vals.push(a * b);
+			return true;
+
+		case '/':
+			let r = a % b;
+			vals.push((a - r) / b);
+			return true;
+
+		case '%':
+			vals.push(a % b);
+			return true;
+
+		case '^':
+			vals.push(a ** b);
+			return true;
+		}
+
+		return false;
+	}
+
+	function readToken() {
+		skipWs();
+		let c = peek();
+
+		if (c === undefined) {
+			return { EOF: true };
+		}
+
+		if (c >= '0' && c <= '9') {
+			let num = '';
+			while (pos < src.length && src[pos] >= '0' && src[pos] <= '9') {
+				num = num + src[pos];
+				pos += 1;
+			}
+			return { number: num } ;
+		}
+
+		if (prec(c) > -1) {
+			pos += 1;
+			return { operator: c };
+		}
+
+		if ('()[]'.indexOf(c) > -1) {
+			pos += 1;
+			return { group: c };
+		}
+
+		let id = '';
+		while (pos < src.length && src[pos].trim() !== '' && '()[]+-*/%^'.indexOf(src[pos]) === -1) {
+			id = id + src[pos];
+			pos += 1;
+		}
+		return { identifier: id };
+	}
+
+	skipWs();
+	if (peek() === undefined) { return { error: "Empty Expression" }; }
+
+	let token = null;
 	for (;;) {
-		let token = tokenizer.scan();
-		switch (token.type) {
-		case TokenType.OPERATOR:
-			let precedence = getPrecedence(token.data);
-			if (precedence > -1) {
-				let operator = operators.at(-1);
-				if (getPrecedence(operator) >= precedence) {
-					operators.pop();
-					compute(operands, operator)
+		// Open Parentheses
+		token = readToken();
+		while (token.group && token.group === '(') {
+			ops.push('(');
+			token = readToken();
+		}
+
+		// Operand
+		if (token.number) {
+			vals.push(parseInt(token.number, 10));
+		} else if (token.identifier) {
+			let id = token.identifier;
+			let val = context[id];
+			if (val) {
+				if (!isInt(val)) {
+					return err("Context value: " + id + " contains non digits or decimals. string: " + val);
 				}
-				operators.push(token.data);
-			} else if (token.data === '(' || token.data === '[') {
-				operators.push(token.data);
-			} else if (token.data === ')') {
-				for (;;) {
-					let operator = operators.pop();
-					if (getPrecedence(operator) !== -1) {
-						compute(operands, operator);
-						continue;
-					} else if (operator === '(') {
-						break;
-					} else if (operator === undefined) {
-						return errorHelper(tokenizer.idx, "No preceding '(' for ')'");
+				vals.push(parseInt(val, 10));
+			} else {
+				val = data.getAll(id);
+				if (peek() === '[') {
+					if (val.length === 0) {
+						return err("Tried indexing id: " + id + " but it does not exist in the form data.");
 					}
-					// Should not reach
-					return errorHelper(tokenizer.idx, "[ASSERT]: undefined operator inside '()': " + operator);
+					ops.push(id);
+					ops.push('[');
+					readToken();
+					continue;
 				}
-			} else if (token.data === ']') {
-				for (;;) {
-					let operator = operators.pop();
-					if (getPrecedence(operator) !== -1) {
-						compute(operands, operator);
-						continue;
-					} else if (operator === '[') {
-						break;
-					} else if (operator === undefined) {
-						return errorHelper(tokenizer.idx, "No preceding 'id[' for ']'");
-					}
-					// Should not reach
-					return errorHelper(tokenizer.idx, "[ASSERT]: undefined operator inside '[]': " + operator);
+				vals.push(val.length);
+			}
+		} else if (token.EOF) {
+			break;
+		} else {
+			return err("Expected an Operand but got: " + token);
+		}
+
+		// Close Brackets
+		token = readToken();
+		while (token.group) {
+			switch (token.group) {
+			case ')':
+				while (ops.length && prec(ops[ops.length-1]) !== -1) {
+					calc(ops.pop());
+				}
+				if (!ops.length) {
+					return err("No preceding '(' for ')'");
+				}
+				let op = ops.pop();
+				if (op !== '(') {
+					return err("Unexpected Operator preceding ')': " + op);
+				}
+				break;
+			case ']':
+				while (ops.length && prec(ops[ops.length-1]) !== -1) {
+					calc(ops.pop());
 				}
 
-				let id = operators.pop();
-				if (id === undefined) {
-					// Should not reach
-					return errorHelper(tokenizer.idx, "[ASSERT]: no preceding id operator for '[]' operation");
+				if (!ops.length) {
+					return err("No preceding '[' for ']'");
 				}
-				let idx = operands.pop();
-				let num = data.getAll(id)[idx];
-				if (num === undefined) {
-					return errorHelper(tokenizer.idx, "Index out of range or invalid. array: " + id + " index: " + idx);
-				} else if (typeof num === "string" || num instanceof String) {
-					for (const ch of num) {
-						if (ch < "0" || ch > "9") {
-							return errorHelper(tokenizer.idx, id + "[" + idx + "] contains non digits or decimals. ch: " + ch);
-						}
-					}
-					operands.push(parseInt(num, 10));
-				} else {
-					return errorHelper(tokenizer.idx, "type of " + id + "[" + idx + "] is not a string" )
+				let currentOp = ops.pop();
+				if (currentOp !== '[') {
+					return err("Unexpected Operator preceding ']': " + currentOp);
 				}
-			}
-			continue;
-		case TokenType.NUM:
-			for (const ch of token.data) {
-				if (ch < "0" || ch > "9") {
-					return errorHelper(tokenizer.idx, "Potential number literal contains non digits or decimals. ch: " + ch);
+
+				let id = ops.pop();
+				let arr = data.getAll(id);
+				let idx = vals.pop();
+				let val = arr[idx];
+				if (val === undefined) {
+					return err("Index out of range. id: " + id + " index: " + idx);
 				}
+				if (!(typeof val === "string" || val instanceof String)) {
+					return err("type of " + id + "[" + idx + "] is not a string");
+				}
+				for (const ch of val) {
+					if (ch < "0" || ch > "9") return err(id + "[" + idx + "] contains non digits or decimals. string: " + val);
+				}
+				vals.push(parseInt(val, 10));
+				break;
+			default:
+				return err("Expected an Operator but got: " + token);
 			}
-			operands.push(parseInt(token.data, 10));
-			continue;
-		case TokenType.IDEN:
-			let next_token = tokenizer.peek();
-			if (next_token.type === TokenType.OPERATOR && next_token.data === '[') {
-				operators.push(token.data);
-			} else {
-				operands.push(data.getAll(token.data).length);
-			}
-			continue;
+			token = readToken();
 		}
-		if (token.type === TokenType.EOF) break;
-		return errorHelper(tokenizer.idx, "[ASSERT]: unknown token.type")
+
+		// Operator
+		if (token.operator) {
+			let op = token.operator;
+			if (prec(op) <= prec(ops[ops.length-1])) {
+				calc(ops.pop())
+			}
+			ops.push(op);
+		} else if (token.EOF) {
+			break;
+		} else {
+			return err("Expected an Operator but got: " + token);
+		}
 	}
-	let i = operators.length;
-	while (i > 0) {
-		i -= 1;
-		compute(operands, operators.pop());
+
+	while (ops.length) {
+		let op= ops.pop()
+		if (!calc(op)) {
+			return { error: "Unclosed '" + op + "'" };
+		}
 	}
-	if (operators.length !== 0) {
-		return { error : "[ASSERT]: left over operators: " + operators }
-	}
-	if (operands.length !== 1) {
-		return { error : "[ASSERT]: left over operands: " + operands }
-	}
-	return operands[0];
+	return vals[0];
 }
+
 
 function hatchFromTemplate(t, data) {
 	function cloneChildren(src, des, data, stack) {
