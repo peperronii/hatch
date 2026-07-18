@@ -24,7 +24,7 @@ function hatch(e, cfg) {
 	let method = form.getAttribute("method") || "get";
 }
 
-function hatchEvaluateExpression(data, context, src) {
+function hatchEvaluateExpression(src, data, context) {
 
 	let pos = 0, vals = [], ops = [];
 
@@ -239,18 +239,57 @@ function hatchEvaluateExpression(data, context, src) {
 
 
 function hatchFromTemplate(t, data) {
-	function cloneChildren(src, des, data, stack) {
+	function err(str) {
+		console.error("hatchFromTemplate: " + str);
+	}
+	function cloneChildren(src, des, data, context) {
 		for (const child of src.childNodes) {
 			let forExpr = child.getAttribute("hh-for");
-			if (!!forExpr) {
+			if (forExpr) {
 				const i = forExpr.indexOf(':');
-				const varibale = str.slice(0, index).trim();
-				const expression = str.slice(index + 1).trim();
-				const range = forExpr.indexOf('..');
+				const varibale = forExpr.slice(0, i).trim();
+				const expression = forExpr.slice(i + 1).trim();
+				const range = expression.indexOf("..");
 				if (range === -1) {
 					data.getAll(expression);
 				} else {
-					// handle range syntax
+					let error = false;
+					let start = hatchEvaluateExpression(str.slice(0, range).trim(), data, context);
+					if (start.error) {
+						err("Error when evaluating range start: " + start.error );
+						error = true;
+					} else {
+						if (start < 0) {
+							err("Evaluated range start is less than zero");
+							error = true;
+						}
+					}
+
+					let end = hatchEvaluateExpression(str.slice(range + 1).trim(), data, context);
+					if (end.error) {
+						err("Error when evaluating range end: " + end.error );
+						error = true;
+					} else {
+						if (end < 0) {
+							err("Evaluated range end is less than zero");
+							error = true;
+						}
+					}
+
+					if (!err) {
+						valueStack = [];
+						if (start > end) {
+							while (start >= end) {
+								valueStack.push(start);
+								start -= 1;
+							}
+						} else {
+							while (start <= end) {
+								valueStack.push(start);
+								start += 1;
+							}
+						}
+					}
 				}
 				
 			}
@@ -269,7 +308,7 @@ function hatchFromTemplate(t, data) {
 	t = (typeof t === "string" || t instanceof String) ? document.querySelector(t) : t;
 
 	if (!(t instanceof HTMLTemplateElement)) {
-		console.error("hatchFromTemplate: " + t + " not found or not a <template>");
+		console.error("hatchFromTemplate: Template target not found or not a <template>");
 		return false;
 	}
 
