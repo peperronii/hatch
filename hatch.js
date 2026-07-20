@@ -48,7 +48,7 @@ function hatchEvaluateExpression(src, data, context) {
 
 	function isInt(str) {
 		for (const ch of str) {
-			if (ch < "0" || ch > "9")  {
+			if (ch < "0" || "9" < ch)  {
 				return false
 			}
 		}
@@ -87,6 +87,7 @@ function hatchEvaluateExpression(src, data, context) {
 		return false;
 	}
 
+	// TODO: make this accescable inside hatchFromTemplate
 	function readToken() {
 		skipWs();
 		let c = peek();
@@ -95,9 +96,9 @@ function hatchEvaluateExpression(src, data, context) {
 			return { EOF: true };
 		}
 
-		if (c >= '0' && c <= '9') {
+		if ('0' <= c && c <= '9') {
 			let num = '';
-			while (pos < src.length && src[pos] >= '0' && src[pos] <= '9') {
+			while (pos < src.length && '0' <= src[pos] && src[pos] <= '9') {
 				num = num + src[pos];
 				pos += 1;
 			}
@@ -114,18 +115,22 @@ function hatchEvaluateExpression(src, data, context) {
 			return { group: c };
 		}
 
-		let id = '';
-		while (pos < src.length && src[pos].trim() !== '' && '()[]+-*/%^'.indexOf(src[pos]) === -1) {
-			id = id + src[pos];
-			pos += 1;
+		// TODO: clear up the logic for id
+		if (('a' <= c && c <= 'z') || ('A' <= c && c <= 'Z') || c === '_') {
+			let id = '';
+			while (pos < src.length && ('0' <= src[pos] && src[pos] <= '9')) {
+				id = id + src[pos];
+				pos += 1;
+			}
+			return { identifier: id };
 		}
-		return { identifier: id };
+		return { error : c }
 	}
 
 	skipWs();
 	if (peek() === undefined) { return { error: "Empty Expression" }; }
 
-	let token = null;
+	let token = undefined;
 	for (;;) {
 		// Open Parentheses
 		token = readToken();
@@ -155,6 +160,8 @@ function hatchEvaluateExpression(src, data, context) {
 					ops.push('[');
 					readToken();
 					continue;
+				} else {
+					vals.push(val.length);
 				}
 				vals.push(val.length);
 			}
@@ -242,18 +249,57 @@ function hatchFromTemplate(t, data) {
 	function err(str) {
 		console.error("hatchFromTemplate: " + str);
 	}
-	function cloneChildren(src, des, data, context) {
+
+	// shallow clone, process and attach a child to des
+	function processChild(child, des, data, context) {
+		const clone = des.appendChild(child.cloneNode(false));
+		if (clone.nodeType !== Node.ELEMENT_NODE) {
+			return null;
+		}
+
+		for (const attr of clone.getAttributeNames()) {
+			if (attr.startsWith("hh:") {
+				let expr = clone.getAttribute(attr);
+				let name = attr.slice(3);
+				clone.removeAttribute;
+				if (name === '') {
+					err("Empty attribute name for hh: on " + clone);
+					continue;
+				}
+				// TODO: handle data logic
+			}
+		}
+		return clone;
+	}
+
+	// deep clone and process all children form src to des
+	function processChildren(src, des, data, context) {
 		for (const child of src.childNodes) {
 			let forExpr = child.getAttribute("hh-for");
 			if (forExpr) {
+				let contextVals = [];
+				let key = undefined;
+				let expr = undefined;
+
 				const i = forExpr.indexOf(':');
-				const varibale = forExpr.slice(0, i).trim();
-				const expression = forExpr.slice(i + 1).trim();
-				const range = expression.indexOf("..");
+				// hh-for="expr" = no value added to context
+				// hh-for=":expr" = empty string as key of context
+				// hh-for="key:expr" = key as key of context
+				if (i === -1) {
+					key = null;
+					expr = forExpr;
+				} else {
+					key = forExpr.slice(0, i).trim();
+					expr = forExpr.slice(i + 1).trim();
+				}
+
+				const range = expr.indexOf("..");
+
 				if (range === -1) {
-					data.getAll(expression);
+					contextVals = data.getAll(expr);
 				} else {
 					let error = false;
+
 					let start = hatchEvaluateExpression(str.slice(0, range).trim(), data, context);
 					if (start.error) {
 						err("Error when evaluating range start: " + start.error );
@@ -277,31 +323,47 @@ function hatchFromTemplate(t, data) {
 					}
 
 					if (!err) {
-						valueStack = [];
 						if (start > end) {
 							while (start >= end) {
-								valueStack.push(start);
+								contextVals.push(start);
 								start -= 1;
 							}
 						} else {
 							while (start <= end) {
-								valueStack.push(start);
+								contextVals.push(start);
 								start += 1;
 							}
 						}
 					}
 				}
-				
-			}
-			const clone = des.appendChild(child.cloneNode(false));
-			if (clone.nodeType !== Node.ELEMENT_NODE) {
-				continue
-			}
 
-			for (const attr of clone.getAttributeNames()) {
+				const unloopedChild = child.cloneNode(false);
+				unloopedChild.removeAttribute("hh-for");
+				if (key ===  null) {
+					for (const val in contextVals) {
+						let clone = processChild(unloopedClone, des, data, context);
+						processChildren(child, clone, data, context);
+					}
+				} else {
+					for (const val in contextVals) {
+						let newContext = { ...context };
+						newContext[key] = val;
+
+						let clone = processChild(unloopedClone, des, data, newContext);
+						if (clone !== null) {
+							processChildren(child, clone, data, newContext);
+						}
+					}
+				}
+
+			} else {
+
+				let clone = processChild(child, des, data, context);
+				if (clone !== null) {
+					processChildren(child, clone, data, context);
+				}
 
 			}
-			cloneChildren(child, clone, data, stack);
 		}
 	}
 
