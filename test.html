@@ -36,7 +36,7 @@
 		div.className = 'test';
 		let ok, detail;
 		try {
-			let r = hatchEvaluateExpression(data, ctx || {}, expr);
+			let r = hatchEvaluateExpression(expr, data, ctx || {});
 			if (expected !== undefined && expected !== null && typeof expected === 'object' && 'error' in expected) {
 				let expMsg = expected.error;
 				ok = (typeof r === 'object' && r !== null && r.error !== undefined &&
@@ -160,7 +160,7 @@
 	test('a + b', 'a + b', fdAB, 4);
 
 	group('Error cases');
-	test('empty expression', '', fd3, { error: 'Empty Expression' });
+	test('empty expression', '', fd3, { error: 'Empty expression' });
 	test('non-numeric in number literal', '1a', fd3, { error: /Expected an Operator/ });
 
 	group('Context values');

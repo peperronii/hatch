@@ -1,4 +1,4 @@
-function hatchEvaluateExpression(data, context, src) {
+function hatchEvaluateExpression(src, data, context) {
 
 	let pos = 0, vals = [], ops = [];
 
@@ -10,132 +10,154 @@ function hatchEvaluateExpression(data, context, src) {
 		return ({ '+':1, '-':1, '*':2, '/':2, '%':2, '^':3 })[ch] ?? -1;
 	}
 
-	function peek() {
-		return pos < src.length ? src[pos] : undefined;
-	}
-
-	function skipWs() {
-		while (pos < src.length && src[pos].trim() === '') {
-			pos += 1;
-		}
-	}
-
-	function isInt(str) {
-		for (const ch of str) {
-			if (ch < "0" || ch > "9")  {
-				return false
-			}
-		}
-		return true;
-	}
-
 	function calc(op) {
 		let b = vals.pop(), a = vals.pop();
 		switch (op) {
 		case '+':
 			vals.push(a + b);
 			return true;
+
 		case '-':
 			vals.push(a - b);
 			return true;
+
 		case '*':
 			vals.push(a * b);
 			return true;
+
 		case '/':
 			let r = a % b;
 			vals.push((a - r) / b);
 			return true;
+
 		case '%':
 			vals.push(a % b);
 			return true;
+
 		case '^':
 			vals.push(a ** b);
 			return true;
 		}
+
 		return false;
 	}
 
-	function readToken() {
-		skipWs();
-		let c = peek();
+	// TODO: make this accescable inside hatchFromTemplate
+	function readToken(t) {
+
+		while (t.pos < t.src.length && t.src[t.pos].trim() === '') {
+			t.pos += 1;
+		}
+
+		let c = t.src[t.pos];
 
 		if (c === undefined) {
-			return { EOF: true };
+			t.token.type = 'EOF';
+			t.token.value = null;
+			return t.token;
 		}
 
-		if (c >= '0' && c <= '9') {
-			let num = '';
-			while (pos < src.length && src[pos] >= '0' && src[pos] <= '9') {
-				num = num + src[pos];
-				pos += 1;
+		if ('0' <= c && c <= '9') {
+			let start = t.pos;
+			t.pos += 1;
+			while (t.pos < t.src.length && '0' <= t.src[t.pos] && t.src[t.pos] <= '9') {
+				t.pos += 1;
 			}
-			return { number: num } ;
+
+			t.token.type = 'number';
+			t.token.value = src.slice(start, t.pos);
+			return t.token;
 		}
 
-		if (prec(c) > -1) {
-			pos += 1;
-			return { operator: c };
+		if ('+-*/%^'.indexOf(c) > -1) {
+			t.pos += 1;
+			t.token.type = 'operator';
+			t.token.value = c;
+			return t.token;
 		}
 
 		if ('()[]'.indexOf(c) > -1) {
-			pos += 1;
-			return { group: c };
+			t.pos += 1;
+			t.token.type = 'group';
+			t.token.value = c;
+			return t.token;
 		}
 
-		let id = '';
-		while (pos < src.length && src[pos].trim() !== '' && '()[]+-*/%^'.indexOf(src[pos]) === -1) {
-			id = id + src[pos];
-			pos += 1;
+		if (('a' <= c && c <= 'z') || ('A' <= c && c <= 'Z') || c === '_') {
+			let start = t.pos;
+			t.pos += 1;
+			while (t.pos < t.src.length &&
+			       (('0' <= t.src[t.pos] && t.src[t.pos] <= '9') ||
+			       ('a' <= t.src[t.pos] && t.src[t.pos] <= 'z') ||
+			       ('A' <= t.src[t.pos] && t.src[t.pos] <= 'Z') ||
+			       t.src[t.pos] === '_')) {
+				t.pos += 1;
+			}
+			t.token.type = 'identifier';
+			t.token.value = src.slice(start, t.pos);
+			return t.token;
 		}
-		return { identifier: id };
+
+		t.token.type = 'unknown';
+		t.token.value = c;
+		return t.token;
 	}
 
-	skipWs();
-	if (peek() === undefined) { return { error: "Empty Expression" }; }
+	function peekToken(t) {
+		let _t = { ...t };
+		return readToken(_t);
+	}
 
-	let token = null;
-	for (;;) {
+	let t = { pos: 0, src: src, token: { type: null, value: null } };
+	parse: for (;;) {
 		// Open Parentheses
-		token = readToken();
-		while (token.group && token.group === '(') {
+		token = readToken(t);
+		while (token.value === '(') {
 			ops.push('(');
-			token = readToken();
+			token = readToken(t);
 		}
 
 		// Operand
-		if (token.number) {
-			vals.push(parseInt(token.number, 10));
-		} else if (token.identifier) {
-			let id = token.identifier;
+		switch (token.type) {
+		case 'number':
+			vals.push(parseInt(token.value, 10));
+			break;
+		case 'identifier':
+			let id = token.value;
 			let val = context[id];
 			if (val) {
-				if (!isInt(val)) {
-					return err("Context value: " + id + " contains non digits or decimals. string: " + val);
+				for (const ch of val) {
+					if (ch < '0' || '9' < ch) {
+						return err("Context value: " + id + " contains non digits or decimals. string: " + val);
+					}
 				}
 				vals.push(parseInt(val, 10));
 			} else {
 				val = data.getAll(id);
-				if (peek() === '[') {
+				let nextToken = peekToken(t)
+				if (nextToken.value === '[') {
 					if (val.length === 0) {
 						return err("Tried indexing id: " + id + " but it does not exist in the form data.");
 					}
 					ops.push(id);
 					ops.push('[');
-					readToken();
+					readToken(t);
 					continue;
+				} else {
+					vals.push(val.length);
 				}
-				vals.push(val.length);
 			}
-		} else if (token.EOF) {
 			break;
-		} else {
-			return err("Expected an Operand but got: " + token);
+		case 'EOF':
+			break parse;
+		default:
+			return err("Expected an Operand but got: " + JSON.stringify(token));
 		}
 
 		// Close Brackets
-		token = readToken();
-		while (token.group) {
-			switch (token.group) {
+		token = readToken(t);
+		while (token.type === 'group') {
+			switch (token.value) {
 			case ')':
 				while (ops.length && prec(ops[ops.length-1]) !== -1) {
 					calc(ops.pop());
@@ -172,28 +194,35 @@ function hatchEvaluateExpression(data, context, src) {
 					return err("type of " + id + "[" + idx + "] is not a string");
 				}
 				for (const ch of val) {
-					if (ch < "0" || ch > "9") return err(id + "[" + idx + "] contains non digits or decimals. string: " + val);
+					if (ch < '0' || '9' < ch) return err(id + "[" + idx + "] contains non digits or decimals. string: " + val);
 				}
 				vals.push(parseInt(val, 10));
 				break;
-			default:
-				return err("Expected an Operator but got: " + token);
+			default :
+				return err("Expected an Operator but got: " + JSON.stringify(token));
 			}
-			token = readToken();
+			token = readToken(t);
 		}
 
 		// Operator
-		if (token.operator) {
-			let op = token.operator;
+
+		switch (token.type) {
+		case 'operator':
+			let op = token.value;
 			if (prec(op) <= prec(ops[ops.length-1])) {
 				calc(ops.pop())
 			}
 			ops.push(op);
-		} else if (token.EOF) {
 			break;
-		} else {
-			return err("Expected an Operator but got: " + token);
+		case 'EOF':
+			break parse;
+		default :
+			return err("Expected an Operator but got: " + JSON.stringify(token));
 		}
+	}
+
+	if (vals.length === 0) {
+		return { error: "Empty expression" };
 	}
 
 	while (ops.length) {

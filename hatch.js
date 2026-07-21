@@ -24,7 +24,72 @@ function hatch(e, cfg) {
 	let method = form.getAttribute("method") || "get";
 }
 
-function hatchEvaluateExpression(src, data, context) {
+hatch.readToken = function (t) {
+
+	while (t.pos < t.src.length && t.src[t.pos].trim() === '') {
+		t.pos += 1;
+	}
+
+	let c = t.src[t.pos];
+
+	if (c === undefined) {
+		t.token.type = 'EOF';
+		t.token.value = null;
+		return t.token;
+	}
+
+	if ('0' <= c && c <= '9') {
+		let start = t.pos;
+		t.pos += 1;
+		while (t.pos < t.src.length && '0' <= t.src[t.pos] && t.src[t.pos] <= '9') {
+			t.pos += 1;
+		}
+
+		t.token.type = 'number';
+		t.token.value = src.slice(start, t.pos);
+		return t.token;
+	}
+
+	if ('+-*/%^'.indexOf(c) > -1) {
+		t.pos += 1;
+		t.token.type = 'operator';
+		t.token.value = c;
+		return t.token;
+	}
+
+	if ('()[]'.indexOf(c) > -1) {
+		t.pos += 1;
+		t.token.type = 'group';
+		t.token.value = c;
+		return t.token;
+	}
+
+	if (('a' <= c && c <= 'z') || ('A' <= c && c <= 'Z') || c === '_') {
+		let start = t.pos;
+		t.pos += 1;
+		while (t.pos < t.src.length &&
+		       (('0' <= t.src[t.pos] && t.src[t.pos] <= '9') ||
+		       ('a' <= t.src[t.pos] && t.src[t.pos] <= 'z') ||
+		       ('A' <= t.src[t.pos] && t.src[t.pos] <= 'Z') ||
+		       t.src[t.pos] === '_')) {
+			t.pos += 1;
+		}
+		t.token.type = 'identifier';
+		t.token.value = src.slice(start, t.pos);
+		return t.token;
+	}
+
+	t.token.type = 'unknown';
+	t.token.value = c;
+	return t.token;
+}
+
+hatch.peekToken = function (t) {
+	let _t = { ...t };
+	return hatch.readToken(_t);
+}
+
+hatch.evaluateExpression = function (src, data, context) {
 
 	let pos = 0, vals = [], ops = [];
 
@@ -34,25 +99,6 @@ function hatchEvaluateExpression(src, data, context) {
 
 	function prec(ch) {
 		return ({ '+':1, '-':1, '*':2, '/':2, '%':2, '^':3 })[ch] ?? -1;
-	}
-
-	function peek() {
-		return pos < src.length ? src[pos] : undefined;
-	}
-
-	function skipWs() {
-		while (pos < src.length && src[pos].trim() === '') {
-			pos += 1;
-		}
-	}
-
-	function isInt(str) {
-		for (const ch of str) {
-			if (ch < "0" || "9" < ch)  {
-				return false
-			}
-		}
-		return true;
 	}
 
 	function calc(op) {
@@ -87,94 +133,57 @@ function hatchEvaluateExpression(src, data, context) {
 		return false;
 	}
 
-	// TODO: make this accescable inside hatchFromTemplate
-	function readToken() {
-		skipWs();
-		let c = peek();
 
-		if (c === undefined) {
-			return { EOF: true };
-		}
-
-		if ('0' <= c && c <= '9') {
-			let num = '';
-			while (pos < src.length && '0' <= src[pos] && src[pos] <= '9') {
-				num = num + src[pos];
-				pos += 1;
-			}
-			return { number: num } ;
-		}
-
-		if (prec(c) > -1) {
-			pos += 1;
-			return { operator: c };
-		}
-
-		if ('()[]'.indexOf(c) > -1) {
-			pos += 1;
-			return { group: c };
-		}
-
-		// TODO: clear up the logic for id
-		if (('a' <= c && c <= 'z') || ('A' <= c && c <= 'Z') || c === '_') {
-			let id = '';
-			while (pos < src.length && ('0' <= src[pos] && src[pos] <= '9')) {
-				id = id + src[pos];
-				pos += 1;
-			}
-			return { identifier: id };
-		}
-		return { error : c }
-	}
-
-	skipWs();
-	if (peek() === undefined) { return { error: "Empty Expression" }; }
-
-	let token = undefined;
-	for (;;) {
+	let t = { pos: 0, src: src, token: { type: null, value: null } };
+	parse: for (;;) {
 		// Open Parentheses
-		token = readToken();
-		while (token.group && token.group === '(') {
+		token = hatch.readToken(t);
+		while (token.value === '(') {
 			ops.push('(');
-			token = readToken();
+			token = hatch.readToken(t);
 		}
 
 		// Operand
-		if (token.number) {
-			vals.push(parseInt(token.number, 10));
-		} else if (token.identifier) {
-			let id = token.identifier;
+		switch (token.type) {
+		case 'number':
+			vals.push(parseInt(token.value, 10));
+			break;
+		case 'identifier':
+			let id = token.value;
 			let val = context[id];
 			if (val) {
-				if (!isInt(val)) {
-					return err("Context value: " + id + " contains non digits or decimals. string: " + val);
+				for (const ch of val) {
+					if (ch < '0' || '9' < ch) {
+						return err("Context value: " + id + " contains non digits or decimals. string: " + val);
+					}
 				}
 				vals.push(parseInt(val, 10));
 			} else {
 				val = data.getAll(id);
-				if (peek() === '[') {
+				let nextToken = hatch.peekToken(t)
+				if (nextToken.value === '[') {
 					if (val.length === 0) {
 						return err("Tried indexing id: " + id + " but it does not exist in the form data.");
 					}
 					ops.push(id);
 					ops.push('[');
-					readToken();
+					hatch.readToken(t);
 					continue;
 				} else {
 					vals.push(val.length);
 				}
-				vals.push(val.length);
 			}
-		} else if (token.EOF) {
 			break;
-		} else {
-			return err("Expected an Operand but got: " + token);
+		case 'EOF':
+			break parse;
+		default:
+			return err("Expected an Operand but got: " + JSON.stringify(token));
 		}
 
 		// Close Brackets
-		token = readToken();
-		while (token.group) {
-			switch (token.group) {
+		token = hatch.readToken(t);
+		while (token.type === 'group') {
+			switch (token.value) {
 			case ')':
 				while (ops.length && prec(ops[ops.length-1]) !== -1) {
 					calc(ops.pop());
@@ -211,28 +220,35 @@ function hatchEvaluateExpression(src, data, context) {
 					return err("type of " + id + "[" + idx + "] is not a string");
 				}
 				for (const ch of val) {
-					if (ch < "0" || ch > "9") return err(id + "[" + idx + "] contains non digits or decimals. string: " + val);
+					if (ch < '0' || '9' < ch) return err(id + "[" + idx + "] contains non digits or decimals. string: " + val);
 				}
 				vals.push(parseInt(val, 10));
 				break;
-			default:
-				return err("Expected an Operator but got: " + token);
+			default :
+				return err("Expected an Operator but got: " + JSON.stringify(token));
 			}
-			token = readToken();
+			token = hatch.readToken(t);
 		}
 
 		// Operator
-		if (token.operator) {
-			let op = token.operator;
+
+		switch (token.type) {
+		case 'operator':
+			let op = token.value;
 			if (prec(op) <= prec(ops[ops.length-1])) {
 				calc(ops.pop())
 			}
 			ops.push(op);
-		} else if (token.EOF) {
 			break;
-		} else {
-			return err("Expected an Operator but got: " + token);
+		case 'EOF':
+			break parse;
+		default :
+			return err("Expected an Operator but got: " + JSON.stringify(token));
 		}
+	}
+
+	if (vals.length === 0) {
+		return { error: "Empty expression" };
 	}
 
 	while (ops.length) {
@@ -245,7 +261,7 @@ function hatchEvaluateExpression(src, data, context) {
 }
 
 
-function hatchFromTemplate(t, data) {
+hatch.fromTemplate = function (template, data) {
 	function err(str) {
 		console.error("hatchFromTemplate: " + str);
 	}
@@ -259,14 +275,48 @@ function hatchFromTemplate(t, data) {
 
 		for (const attr of clone.getAttributeNames()) {
 			if (attr.startsWith("hh:") {
+
 				let expr = clone.getAttribute(attr);
-				let name = attr.slice(3);
 				clone.removeAttribute;
+
+				let name = attr.slice(3);
 				if (name === '') {
 					err("Empty attribute name for hh: on " + clone);
 					continue;
 				}
-				// TODO: handle data logic
+
+				let t = { pos: 0, src: expr, token: { type: null, value: null } }
+
+				let token = hatch.readToken(t);
+				if (token.type !== 'identifier') {
+					err("Expected an Identifier but got: " + JSON.Stringify(token));
+					continue;
+				}
+
+				let id = token.value;
+				let attrVal = null;
+
+				token = hatch.readToken(t);
+				if (token.value === '[') {
+					let close = expr.lastIndexOf(']');
+					if (close === -1) {
+						err("Unclosed '['");
+						continue;
+					}
+					continue;
+					// TODO: finish data pull logic
+				} else if (token.type === 'EOF') {
+					attrVal = context[id];
+					if (attrVal === undefined) {
+						err("Context: " + id + " is undefined");
+						continue;
+					}
+					// TODO: finish context pull logic
+
+				} else {
+					err ("Unexpected token after " + id + " : " JSON.Stringify(token));
+					continue
+				}
 			}
 		}
 		return clone;
@@ -300,7 +350,7 @@ function hatchFromTemplate(t, data) {
 				} else {
 					let error = false;
 
-					let start = hatchEvaluateExpression(str.slice(0, range).trim(), data, context);
+					let start = hatch.evaluateExpression(str.slice(0, range).trim(), data, context);
 					if (start.error) {
 						err("Error when evaluating range start: " + start.error );
 						error = true;
@@ -311,7 +361,7 @@ function hatchFromTemplate(t, data) {
 						}
 					}
 
-					let end = hatchEvaluateExpression(str.slice(range + 1).trim(), data, context);
+					let end = hatch.evaluateExpression(str.slice(range + 1).trim(), data, context);
 					if (end.error) {
 						err("Error when evaluating range end: " + end.error );
 						error = true;
@@ -340,12 +390,12 @@ function hatchFromTemplate(t, data) {
 				const unloopedChild = child.cloneNode(false);
 				unloopedChild.removeAttribute("hh-for");
 				if (key ===  null) {
-					for (const val in contextVals) {
+					for (const val of contextVals) {
 						let clone = processChild(unloopedClone, des, data, context);
 						processChildren(child, clone, data, context);
 					}
 				} else {
-					for (const val in contextVals) {
+					for (const val of contextVals) {
 						let newContext = { ...context };
 						newContext[key] = val;
 
@@ -367,14 +417,15 @@ function hatchFromTemplate(t, data) {
 		}
 	}
 
-	t = (typeof t === "string" || t instanceof String) ? document.querySelector(t) : t;
+	template = (typeof template === "string" || template instanceof String) ? document.querySelector(template) : template;
 
-	if (!(t instanceof HTMLTemplateElement)) {
+	if (!(template instanceof HTMLTemplateElement)) {
 		console.error("hatchFromTemplate: Template target not found or not a <template>");
 		return false;
 	}
 
 	let hatchMap = {};
-	let src = t.content
-	let des = t.content.cloneNode(false)
+	let src = template.content;
+	let des = template.content.cloneNode(false);
+	processChildren(src, des, data, {});
 } 
