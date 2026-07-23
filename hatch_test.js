@@ -65,7 +65,7 @@ function hatchEvaluateExpression(src, data, context) {
 			}
 
 			t.token.type = 'number';
-			t.token.value = src.slice(start, t.pos);
+			t.token.value = t.src.slice(start, t.pos);
 			return t.token;
 		}
 
@@ -94,7 +94,7 @@ function hatchEvaluateExpression(src, data, context) {
 				t.pos += 1;
 			}
 			t.token.type = 'identifier';
-			t.token.value = src.slice(start, t.pos);
+			t.token.value = t.src.slice(start, t.pos);
 			return t.token;
 		}
 

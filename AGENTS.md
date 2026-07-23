@@ -11,7 +11,7 @@ Vanilla JS library for template-based form processing using `<template>` element
 
 ### Template Processing
 
-- **`processChild(child, des, data, context)`** — Clones node into destination. Processes `hh:*` attributes (data binding). Unfinished — attribute value resolution incomplete, several syntax bugs.
+- **`processChild(child, des, data, context)`** — Clones node into destination. Processes `hh:*` attributes (data binding). Extracts bound expression but resolves it is unfinished (see below).
 - **`processChildren(src, des, data, context)`** — Recursively walks child nodes. Handles `hh-for` iteration:
   - `key:list` — iterates FormData entries, sets `key` in context
   - `key:start..end` — numeric range, evaluates start/end via `evaluateExpression`
@@ -30,20 +30,11 @@ Vanilla JS library for template-based form processing using `<template>` element
 
 - **`hatch_test.js`** — Standalone duplicate of `evaluateExpression` (not using `hatch.` prefix). Separate test runner in `test.html` with FormData fixtures covering arithmetic, precedence, parentheses, exponentiation, modulo, floor division, identifiers, array indexing, compound expressions, whitespace, error cases, and context values.
 
-### Known Bugs (hatch.js)
+### Incomplete Features
 
-| Line | Bug |
-|------|-----|
-| 49, 78 | `src.slice` should be `t.src.slice` (wrong scope) |
-| 277 | Missing `)` in `startsWith("hh:")` |
-| 281 | `removeAttribute` missing `()` call |
-| 292 | `JSON.Stringify` should be `JSON.stringify` |
-| 317 | Missing `+` in `" : " JSON.stringify` |
-| 353, 364 | `str` should be `expr` |
-| 375 | `!err` (always truthy, is function) should be `!error` |
-| 394, 402 | `unloopedClone` should be `unloopedChild` |
-
-Plus multiple incomplete TBD sections in `processChild`.
+- **`hatch()` standard submission path** — Non-hash target forms reach line 24 and do nothing.
+- **`processChild` attribute binding** — Expression is parsed from `hh:*` and `attrVal` is resolved, but no attribute is set on the clone node (TODOs at lines 307, 314).
+- **`fromTemplate` return value** — Returns `undefined` (no `return` statement).
 
 ### Backup (`backup/`)
 
@@ -54,4 +45,4 @@ Previous iteration. HTMX-style AJAX library:
 
 ## Status
 
-Work in progress. Expression evaluator functional. Template renderer drafted but contains syntax bugs and incomplete features.
+Work in progress. Expression evaluator and tokenizer fully functional. Template renderer structurally complete but attribute binding and standard form submission are unfinished.

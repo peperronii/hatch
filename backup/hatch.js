@@ -60,7 +60,7 @@ function hatch(src, url, des = src, opts = {}) {
 			.then((r) => r.text())
 			.then((html) => {
 				let doc = new DOMParser().parseFromString(html, 'text/html');
-				for (let e of [...doc.body.children]) {
+				for (const e of [...doc.body.children]) {
 					if (!e.id) continue;
 					if (e.id === des.id) continue;
 					document.getElementById(e.id)?.replaceWith(e);

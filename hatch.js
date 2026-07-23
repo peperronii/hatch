@@ -1,27 +1,49 @@
 function hatch(e, cfg) {	
+
+	function err(str) {
+		console.error("hatch | " + str);
+	}
+
+	function warn(str) {
+		console.warn("hatch | " + str);
+	}
+
 	e.preventDefault();
 
 	let form = e.target;
-	let target = e.submitter.formaction || form.action;
+	if (!(form instanceof HTMLFormElement)) {
+		err("event target is not a form element: " + form);
+		return;
+	}
+	// TODO: add an option to either reportValidity or checkValidity
+	if (!form.reportValidity()) {
+		warn("form validation failed" + form);
+		return;
+	}
+
+	let action = e.submitter.formaction || form.action || '';
+	let target = e.submitter.formtarget || form.target || '';
+
 	let data = new FormData(form);
-
-
-	if (!!cfg.prep) {
+	if (cfg.prep) {
 		if (typeof cfg.prep === "function") {
 			data = cfg.prep(data);
 		} else {
-			console.error("hatch: " + cfg.prep + " is not a function.");
-			return false;
+			err(cfg.prep + " is not a function.");
+			return;
 		}
 	}
 
-	let template = null;
-	if (target.startsWith('#')) {
-		hatchFromTemplate(target, data)
-		return false;
+	let html = undefined
+	if (!action.startsWith('#')) {
+		let method = form.getAttribute("method") || "get";
+		// FOR AGENT: move the backup hatch logic here!
+		return;
+	} else {
+		html = document.querySelector(html);
 	}
 
-	let method = form.getAttribute("method") || "get";
+	let hatched = hatch.html(html, data);
 }
 
 hatch.readToken = function (t) {
@@ -46,7 +68,7 @@ hatch.readToken = function (t) {
 		}
 
 		t.token.type = 'number';
-		t.token.value = src.slice(start, t.pos);
+		t.token.value = t.src.slice(start, t.pos);
 		return t.token;
 	}
 
@@ -75,7 +97,7 @@ hatch.readToken = function (t) {
 			t.pos += 1;
 		}
 		t.token.type = 'identifier';
-		t.token.value = src.slice(start, t.pos);
+		t.token.value = t.src.slice(start, t.pos);
 		return t.token;
 	}
 
@@ -261,64 +283,108 @@ hatch.evaluateExpression = function (src, data, context) {
 }
 
 
-hatch.fromTemplate = function (template, data) {
+hatch.html = function (html, data) {
 	function err(str) {
-		console.error("hatchFromTemplate: " + str);
+		console.error("hatch.html | " + str);
 	}
 
 	// shallow clone, process and attach a child to des
 	function processChild(child, des, data, context) {
+
+		function errAttr(attr, str) {
+			err("When processing " + attr + " | " + str);
+		}
+
+		function warnAttr(attr, str) {
+			console.warn("hatchFromTemplate |  " + "When processing " + attr + " | " + str);
+		}
+
 		const clone = des.appendChild(child.cloneNode(false));
 		if (clone.nodeType !== Node.ELEMENT_NODE) {
 			return null;
 		}
 
+		// process each attribute
 		for (const attr of clone.getAttributeNames()) {
-			if (attr.startsWith("hh:") {
 
-				let expr = clone.getAttribute(attr);
-				clone.removeAttribute;
+			let evalText = false;
+			let name = undefined;
+			if (attr.startsWith("hh:")) {
+				name = attr.slice(3);
+			} else {
+				continue;
+			}
 
-				let name = attr.slice(3);
-				if (name === '') {
-					err("Empty attribute name for hh: on " + clone);
+			let expr = clone.getAttribute(attr);
+			clone.removeAttribute(attr);
+
+
+			let val = undefined;
+
+			let t = { pos: 0, src: expr, token: { type: null, value: null } };
+
+			let token = hatch.readToken(t);
+			if (token.type !== 'identifier') {
+				errAttr(attr,"Expected an Identifier but got: " + JSON.stringify(token));
+				continue;
+			}
+
+			let id = token.value;
+
+			token = hatch.readToken(t);
+			if (token.value === '[') {
+				let close = expr.lastIndexOf(']');
+				if (close === -1) {
+					errAttr(attr, "Unclosed '['");
 					continue;
 				}
 
-				let t = { pos: 0, src: expr, token: { type: null, value: null } }
-
-				let token = hatch.readToken(t);
-				if (token.type !== 'identifier') {
-					err("Expected an Identifier but got: " + JSON.Stringify(token));
+				let trail = expr.slice(close + 1);
+				let trailToken = hatch.readToken({ pos: 0, src: trail , token: { type: null, value: null } })
+				if (trailToken.type !== 'EOF') {
+					errAttr(attr, "Unexpected token after ']' : " + JSON.stringify(trailToken));
 					continue;
 				}
 
-				let id = token.value;
-				let attrVal = null;
-
-				token = hatch.readToken(t);
-				if (token.value === '[') {
-					let close = expr.lastIndexOf(']');
-					if (close === -1) {
-						err("Unclosed '['");
-						continue;
-					}
+				let idxExpr = expr.slice(t.pos, close);
+				let idx = hatch.evaluateExpression(idxExpr, data, context);
+				if (idx.error) {
+					errAttr(attr, "Error when evaluating index expression: " + idx.error);
 					continue;
-					// TODO: finish data pull logic
-				} else if (token.type === 'EOF') {
-					attrVal = context[id];
-					if (attrVal === undefined) {
-						err("Context: " + id + " is undefined");
-						continue;
-					}
-					// TODO: finish context pull logic
-
-				} else {
-					err ("Unexpected token after " + id + " : " JSON.Stringify(token));
-					continue
 				}
+
+				val = data.getAll(id);
+				if (val.length === 0) {
+					warnAttr(attr, "Form data: " + id + " does not exist");
+					continue;
+				}
+
+				val = val[idx];
+				if (val === '') {
+					errAttr(attr, "Form data: " + id + " index out of range: "idx );
+					continue;
+				}
+
+			} else if (token.type === 'EOF') {
+
+				val = context[id];
+				if (attrVal === undefined) {
+					errAttr(attr, "Context: " + id + " is undefined");
+					continue;
+				}
+
+			} else {
+				errAttr(attr, "Unexpected token after " + id + " : " + JSON.stringify(token));
+				continue;
+			}
+
+			if (name === '') {
+				clone.textContent = val;
+			} else {
+				clone.setAttribute(name, val);
 			}
 		}
+
 		return clone;
 	}
 
@@ -348,31 +414,31 @@ hatch.fromTemplate = function (template, data) {
 				if (range === -1) {
 					contextVals = data.getAll(expr);
 				} else {
-					let error = false;
+					let hasErr = false;
 
-					let start = hatch.evaluateExpression(str.slice(0, range).trim(), data, context);
+					let start = hatch.evaluateExpression(expr.slice(0, range).trim(), data, context);
 					if (start.error) {
 						err("Error when evaluating range start: " + start.error );
-						error = true;
+						hasErr = true;
 					} else {
 						if (start < 0) {
 							err("Evaluated range start is less than zero");
-							error = true;
+							hasErr = true;
 						}
 					}
 
-					let end = hatch.evaluateExpression(str.slice(range + 1).trim(), data, context);
+					let end = hatch.evaluateExpression(expr.slice(range + 1).trim(), data, context);
 					if (end.error) {
-						err("Error when evaluating range end: " + end.error );
-						error = true;
+						err("Error when evaluating range end: " + end.error);
+						hasErr = true;
 					} else {
 						if (end < 0) {
 							err("Evaluated range end is less than zero");
-							error = true;
+							hasErr = true;
 						}
 					}
 
-					if (!err) {
+					if (!hasErr) {
 						if (start > end) {
 							while (start >= end) {
 								contextVals.push(start);
@@ -391,18 +457,20 @@ hatch.fromTemplate = function (template, data) {
 				unloopedChild.removeAttribute("hh-for");
 				if (key ===  null) {
 					for (const val of contextVals) {
-						let clone = processChild(unloopedClone, des, data, context);
+						let clone = processChild(unloopedChild, des, data, context);
 						processChildren(child, clone, data, context);
 					}
 				} else {
 					for (const val of contextVals) {
-						let newContext = { ...context };
-						newContext[key] = val;
+						let _val = context[key];
+						context[key] = val;
 
-						let clone = processChild(unloopedClone, des, data, newContext);
+						let clone = processChild(unloopedChild, des, data, context);
 						if (clone !== null) {
-							processChildren(child, clone, data, newContext);
+							processChildren(child, clone, data, context);
 						}
+
+						context[key] = _val;
 					}
 				}
 
@@ -417,15 +485,20 @@ hatch.fromTemplate = function (template, data) {
 		}
 	}
 
-	template = (typeof template === "string" || template instanceof String) ? document.querySelector(template) : template;
-
-	if (!(template instanceof HTMLTemplateElement)) {
-		console.error("hatchFromTemplate: Template target not found or not a <template>");
-		return false;
+	if (html instanceof HTMLElement) {
+		if (html instanceof HTMLTemplateElement) {
+			html = html.content;
+		}
+	} else {
+		err(html + "is not a HTML element")
 	}
 
-	let hatchMap = {};
-	let src = template.content;
-	let des = template.content.cloneNode(false);
-	processChildren(src, des, data, {});
-} 
+	let hatched = undefined;
+	if (data) {
+		hatched = html.cloneNode(false);
+		processChildren(html, hatched, data, {});
+	} else {
+		hatched = html.cloneNode(true);
+	}
+	return hatched;
+}
