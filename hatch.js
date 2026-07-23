@@ -21,8 +21,8 @@ function hatch(e, cfg) {
 		return;
 	}
 
-	let action = e.submitter.formaction || form.action || '';
-	let target = e.submitter.formtarget || form.target || '';
+	let action = e.submitter?.formaction || form.action || '';
+	let target = e.submitter?.formtarget || form.target || '';
 
 	let data = new FormData(form);
 	if (cfg.prep) {
@@ -40,10 +40,11 @@ function hatch(e, cfg) {
 		// FOR AGENT: move the backup hatch logic here!
 		return;
 	} else {
-		html = document.querySelector(html);
+		html = document.querySelector(action);
 	}
 
 	let hatched = hatch.html(html, data);
+
 }
 
 hatch.readToken = function (t) {
@@ -126,30 +127,36 @@ hatch.evaluateExpression = function (src, data, context) {
 	function calc(op) {
 		let b = vals.pop(), a = vals.pop();
 		switch (op) {
-		case '+':
-			vals.push(a + b);
-			return true;
+			case '+': {
+				vals.push(a + b);
+				return true;
+			}
 
-		case '-':
-			vals.push(a - b);
-			return true;
+			case '-': {
+				vals.push(a - b);
+				return true;
+			}
 
-		case '*':
-			vals.push(a * b);
-			return true;
+			case '*': {
+				vals.push(a * b);
+				return true;
+			}
 
-		case '/':
-			let r = a % b;
-			vals.push((a - r) / b);
-			return true;
+			case '/': {
+				let r = a % b;
+				vals.push((a - r) / b);
+				return true;
+			}
 
-		case '%':
-			vals.push(a % b);
-			return true;
+			case '%': {
+				vals.push(a % b);
+				return true;
+			}
 
-		case '^':
-			vals.push(a ** b);
-			return true;
+			case '^': {
+				vals.push(a ** b);
+				return true;
+			}
 		}
 
 		return false;
@@ -159,7 +166,7 @@ hatch.evaluateExpression = function (src, data, context) {
 	let t = { pos: 0, src: src, token: { type: null, value: null } };
 	parse: for (;;) {
 		// Open Parentheses
-		token = hatch.readToken(t);
+		let token = hatch.readToken(t);
 		while (token.value === '(') {
 			ops.push('(');
 			token = hatch.readToken(t);
@@ -167,87 +174,99 @@ hatch.evaluateExpression = function (src, data, context) {
 
 		// Operand
 		switch (token.type) {
-		case 'number':
-			vals.push(parseInt(token.value, 10));
-			break;
-		case 'identifier':
-			let id = token.value;
-			let val = context[id];
-			if (val) {
-				for (const ch of val) {
-					if (ch < '0' || '9' < ch) {
-						return err("Context value: " + id + " contains non digits or decimals. string: " + val);
-					}
-				}
-				vals.push(parseInt(val, 10));
-			} else {
-				val = data.getAll(id);
-				let nextToken = hatch.peekToken(t)
-				if (nextToken.value === '[') {
-					if (val.length === 0) {
-						return err("Tried indexing id: " + id + " but it does not exist in the form data.");
-					}
-					ops.push(id);
-					ops.push('[');
-					hatch.readToken(t);
-					continue;
-				} else {
-					vals.push(val.length);
-				}
+			case 'number': {
+				vals.push(parseInt(token.value, 10));
+				break;
 			}
-			break;
-		case 'EOF':
-			break parse;
-		default:
-			return err("Expected an Operand but got: " + JSON.stringify(token));
+
+			case 'identifier': {
+				let id = token.value;
+				let val = context[id];
+				if (val) {
+					for (const ch of val) {
+						if (ch < '0' || '9' < ch) {
+							return err("Context value: " + id + " contains non digits or decimals. string: " + val);
+						}
+					}
+					vals.push(parseInt(val, 10));
+				} else {
+					val = data.getAll(id);
+					let nextToken = hatch.peekToken(t)
+					if (nextToken.value === '[') {
+						if (val.length === 0) {
+							return err("Tried indexing id: " + id + " but it does not exist in the form data.");
+						}
+						ops.push(id);
+						ops.push('[');
+						hatch.readToken(t);
+						continue;
+					} else {
+						vals.push(val.length);
+					}
+				}
+				break;
+			}
+
+			case 'EOF': { 
+				break parse;
+			}
+
+			default: {
+				return err("Expected an Operand but got: " + JSON.stringify(token));
+			}
 		}
 
 		// Close Brackets
 		token = hatch.readToken(t);
 		while (token.type === 'group') {
 			switch (token.value) {
-			case ')':
-				while (ops.length && prec(ops[ops.length-1]) !== -1) {
-					calc(ops.pop());
-				}
-				if (!ops.length) {
-					return err("No preceding '(' for ')'");
-				}
-				let op = ops.pop();
-				if (op !== '(') {
-					return err("Unexpected Operator preceding ')': " + op);
-				}
-				break;
-			case ']':
-				while (ops.length && prec(ops[ops.length-1]) !== -1) {
-					calc(ops.pop());
+				case ')': {
+					while (ops.length && prec(ops[ops.length-1]) !== -1) {
+						calc(ops.pop());
+					}
+					if (!ops.length) {
+						return err("No preceding '(' for ')'");
+					}
+					let op = ops.pop();
+					if (op !== '(') {
+						return err("Unexpected Operator preceding ')': " + op);
+					}
+					break;
 				}
 
-				if (!ops.length) {
-					return err("No preceding '[' for ']'");
-				}
-				let currentOp = ops.pop();
-				if (currentOp !== '[') {
-					return err("Unexpected Operator preceding ']': " + currentOp);
+				case ']': {
+					while (ops.length && prec(ops[ops.length-1]) !== -1) {
+						calc(ops.pop());
+					}
+
+					if (!ops.length) {
+						return err("No preceding '[' for ']'");
+					}
+					let currentOp = ops.pop();
+					if (currentOp !== '[') {
+						return err("Unexpected Operator preceding ']': " + currentOp);
+					}
+
+					let id = ops.pop();
+					let arr = data.getAll(id);
+					let idx = vals.pop();
+					let val = arr[idx];
+					if (val === undefined) {
+						return err("Index out of range. id: " + id + " index: " + idx);
+					}
+					if (!(typeof val === "string" || val instanceof String)) {
+						return err("type of " + id + "[" + idx + "] is not a string");
+					}
+					for (const ch of val) {
+						if (ch < '0' || '9' < ch) return err(id + "[" + idx + "] contains non digits or decimals. string: " + val);
+					}
+					vals.push(parseInt(val, 10));
+					break;
 				}
 
-				let id = ops.pop();
-				let arr = data.getAll(id);
-				let idx = vals.pop();
-				let val = arr[idx];
-				if (val === undefined) {
-					return err("Index out of range. id: " + id + " index: " + idx);
+				default : {
+					return err("Expected an Operator but got: " + JSON.stringify(token));
 				}
-				if (!(typeof val === "string" || val instanceof String)) {
-					return err("type of " + id + "[" + idx + "] is not a string");
-				}
-				for (const ch of val) {
-					if (ch < '0' || '9' < ch) return err(id + "[" + idx + "] contains non digits or decimals. string: " + val);
-				}
-				vals.push(parseInt(val, 10));
-				break;
-			default :
-				return err("Expected an Operator but got: " + JSON.stringify(token));
 			}
 			token = hatch.readToken(t);
 		}
@@ -255,17 +274,20 @@ hatch.evaluateExpression = function (src, data, context) {
 		// Operator
 
 		switch (token.type) {
-		case 'operator':
-			let op = token.value;
-			if (prec(op) <= prec(ops[ops.length-1])) {
-				calc(ops.pop())
+			case 'operator': {
+				let op = token.value;
+				if (prec(op) <= prec(ops[ops.length-1])) {
+					calc(ops.pop())
+				}
+				ops.push(op);
+				break;
 			}
-			ops.push(op);
-			break;
-		case 'EOF':
-			break parse;
-		default :
-			return err("Expected an Operator but got: " + JSON.stringify(token));
+			case 'EOF': {
+				break parse;
+			}
+			default : {
+				return err("Expected an Operator but got: " + JSON.stringify(token));
+			}
 		}
 	}
 
@@ -300,24 +322,18 @@ hatch.html = function (html, data) {
 		}
 
 		const clone = des.appendChild(child.cloneNode(false));
-		if (clone.nodeType !== Node.ELEMENT_NODE) {
-			return null;
-		}
 
 		// process each attribute
 		for (const attr of clone.getAttributeNames()) {
 
-			let evalText = false;
-			let name = undefined;
-			if (attr.startsWith("hh:")) {
-				name = attr.slice(3);
-			} else {
+			if (!attr.startsWith("hh:")) {
 				continue;
 			}
 
+			let name = attr.slice(3);
+
 			let expr = clone.getAttribute(attr);
 			clone.removeAttribute(attr);
-
 
 			let val = undefined;
 
@@ -360,15 +376,15 @@ hatch.html = function (html, data) {
 				}
 
 				val = val[idx];
-				if (val === '') {
-					errAttr(attr, "Form data: " + id + " index out of range: "idx );
+				if (val === undefined) {
+					errAttr(attr, "Form data: " + id + " index out of range: " + idx);
 					continue;
 				}
 
 			} else if (token.type === 'EOF') {
 
 				val = context[id];
-				if (attrVal === undefined) {
+				if (val === undefined) {
 					errAttr(attr, "Context: " + id + " is undefined");
 					continue;
 				}
@@ -391,7 +407,14 @@ hatch.html = function (html, data) {
 	// deep clone and process all children form src to des
 	function processChildren(src, des, data, context) {
 		for (const child of src.childNodes) {
+
+			if (child.nodeType !== Node.ELEMENT_NODE) {
+				des.appendChild(child.cloneNode(true));
+				continue;
+			}
+
 			let forExpr = child.getAttribute("hh-for");
+
 			if (forExpr) {
 				let contextVals = [];
 				let key = undefined;
@@ -456,9 +479,12 @@ hatch.html = function (html, data) {
 				const unloopedChild = child.cloneNode(false);
 				unloopedChild.removeAttribute("hh-for");
 				if (key ===  null) {
-					for (const val of contextVals) {
+					let count = contextVals.length;
+					while (count) {
 						let clone = processChild(unloopedChild, des, data, context);
 						processChildren(child, clone, data, context);
+
+						count -= 1;
 					}
 				} else {
 					for (const val of contextVals) {
@@ -490,7 +516,8 @@ hatch.html = function (html, data) {
 			html = html.content;
 		}
 	} else {
-		err(html + "is not a HTML element")
+		err(html + " is not a HTML element")
+		return null;
 	}
 
 	let hatched = undefined;
