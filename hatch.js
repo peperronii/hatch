@@ -1,591 +1,681 @@
 function hatch(e, cfg) {	
 
-	function err(str) {
-		console.error("hatch | " + str);
-	}
-
-	function warn(str) {
-		console.warn("hatch | " + str);
-	}
-
-	e.preventDefault();
-
-	let form = e.target;
-	if (!(form instanceof HTMLFormElement)) {
-		err("event target is not a form element: " + form);
-		return;
-	}
-	// TODO: add an option to either reportValidity or checkValidity
-	if (!form.reportValidity()) {
-		warn("form validation failed" + form);
-		return;
-	}
-
-	let action = e.submitter?.formaction || form.action || '';
-	let target = e.submitter?.formtarget || form.target || '';
-
-	let data = new FormData(form);
-	if (cfg.prep) {
-		if (typeof cfg.prep === "function") {
-			data = cfg.prep(data);
-		} else {
-			err(cfg.prep + " is not a function.");
-			return;
+	function swap(doc, target) {
+		for (const el of [...doc.children]) {
+			let id = el.getAttribute('hh-id') || el.id;
+			el.removeAttribute('hh-id');
+			if ( '#' + id === target) continue
+			document.getElementById(id)?.replaceWith(el)
+		}
+		if (target && target !== '') {
+		    document.querySelector(target)?.replaceWith(...doc.children)
 		}
 	}
 
-	let html = undefined
-	if (!action.startsWith('#')) {
-		let method = form.getAttribute("method") || "get";
-		// FOR AGENT: move the backup hatch logic here!
-		return;
-	} else {
-		html = document.querySelector(action);
+	e.preventDefault()
+
+	let form = e.target
+
+	cfg = { hatch.cfg, ...cfg }
+
+	if (!(form instanceof HTMLFormElement)) {
+		cfg.onError(new Error("event target is not a form element: " + form))
+		return false
 	}
 
-	let hatched = hatch.html(html, data);
+	if (!cfg.onValidation(form)) {
+		return false
+	}
 
+	let action = e.submitter?.formaction || form.action || ''
+	let target = e.submitter?.formtarget || form.target || ''
+	let method = e.submitter?.formmethod || form.method || 'GET'
+
+	method = method.toUpperCase()
+	if(!["GET","POST","PUT","PATCH","DELETE"].includes(method)) {
+		cfg.onError(new Error("Invalid method: " + method))
+		return false
+	}
+
+	let data = cfg.onFormData(new FormData(form))
+
+	if (form._hatchDebounce) clearTimeout(form._hatchDebounce)
+	if (form._hatchTimeout) clearTimeout(form._hatchTimeout)
+	if (form._hatchAbort) form._hatchAbort.abort()
+
+	cfg.onLoad()
+
+	if (!action.startsWith('#')) {
+
+		form._hatchAbort = new AbortController()
+		if (cfg.timeout) {
+			form._hatchTimeout = setTimeout(() => form._hatchAbort.abort(new DOMException('Timeout', 'TimeoutError')), cfg.timeout)
+		}
+
+
+		let init = { signal: form._hatchAbort.signal, method }
+		let b = new URLSearchParams(data)
+		if (method === 'GET' || method === 'DELETE') {
+			action = action + '?' + b
+		} else {
+			init.body = b
+			init.headers = { 'Content-Type': 'application/x-www-form-urlencoded' }
+		}
+
+		form._hatchDebounce = setTimeout(() => {
+			fetch(action, init)
+				.then((r) => r.text())
+				.then((html) => {
+					let template = document.createElement('template')
+					template.innerHTML = html
+					let [hatched, errors] = hatch.html(template, data)
+					if (errors.length !== 0) {
+						throw new Error(errors.join('\n'))
+					}
+					swap(hatched, target)
+				})
+				.catch(cfg.onError)
+				.finally(cfg.onFinish)
+		}, cfg.debounce)
+
+	} else {
+		let html = document.querySelector(action)
+
+		form._hatchDebounce = setTimeout(() => {
+			let [hatched, errors] = hatch.html(html, data)
+			if (errors.length !== 0) {
+				cfg.onError(new Error(errors.join('\n')))
+				return false
+			}
+			swap(hatched, target)
+			cfg.onFinish()
+		}, cfg.debounce)
+
+		form._hatchAbort = {
+			abort : (error) => {
+				clearTimeout(form._hatchTimeout)
+				clearTimeout(form._hatchDebounce)
+				if (error) {
+					cfg.onError(error)
+				} else {
+					cfg.onError(new Error("The operation was aborted.", 'AbortError'))
+				}
+				cfg.onFinish()
+			}
+		}
+
+		if (cfg.timeout) {
+			form._hatchTimeout = setTimeout(() => form._hatchAbort.abort(new DOMException('Timeout', 'TimeoutError')), cfg.timeout)
+		}
+	}
+
+	return false;
 }
 
+hatch.cfg = {
+	debounce: 0,
+	timeout: 2000,
+	onError: (error) => { 
+		if (error.name === 'AbortError') {
+			console.warn("hatch | " + error.message)
+		}
+		else {
+			console.error("hatch | " + error.message)
+		}
+	},
 
+	onValidation: (form) => {
+		if (!form.reportValidity()) {
+			return false
+		}
+		return true
+	},
 
+	onFormData: (data) => {
+		return data
+	},
+
+	onLoad: () => {},
+	onFinish: () => {},
+}
 
 hatch.html = function (html, data, context = {}) {
 
+	let errors = [];
+
 	function err(str) {
-		console.error("hatch.html | " + str);
+		errors.push("hatch.html | " + str)
 	}
 
 	function readToken(t) {
 
 		while (t.pos < t.src.length && t.src[t.pos].trim() === '') {
-			t.pos += 1;
+			t.pos += 1
 		}
 
-		let c = t.src[t.pos];
+		let c = t.src[t.pos]
 
 		if (c === undefined) {
-			t.token.type = 'EOF';
-			t.token.value = null;
-			return t.token;
+			t.token.type = 'EOF'
+			t.token.value = null
+			return t.token
 		}
 
 		if ('0' <= c && c <= '9') {
-			let start = t.pos;
-			t.pos += 1;
+			let start = t.pos
+			t.pos += 1
 			while (t.pos < t.src.length && '0' <= t.src[t.pos] && t.src[t.pos] <= '9') {
-				t.pos += 1;
+				t.pos += 1
 			}
 
-			t.token.type = 'number';
-			t.token.value = t.src.slice(start, t.pos);
-			return t.token;
+			t.token.type = 'number'
+			t.token.value = t.src.slice(start, t.pos)
+			return t.token
 		}
 
 		if ('+-*/%^'.indexOf(c) > -1) {
-			t.pos += 1;
-			t.token.type = 'operator';
-			t.token.value = c;
-			return t.token;
+			t.pos += 1
+			t.token.type = 'operator'
+			t.token.value = c
+			return t.token
 		}
 
 		if ('()[]'.indexOf(c) > -1) {
-			t.pos += 1;
-			t.token.type = 'group';
-			t.token.value = c;
-			return t.token;
+			t.pos += 1
+			t.token.type = 'group'
+			t.token.value = c
+			return t.token
 		}
 
 		if (('a' <= c && c <= 'z') || ('A' <= c && c <= 'Z') || c === '_') {
-			let start = t.pos;
-			t.pos += 1;
+			let start = t.pos
+			t.pos += 1
 			while (t.pos < t.src.length &&
 			       (('0' <= t.src[t.pos] && t.src[t.pos] <= '9') ||
 			       ('a' <= t.src[t.pos] && t.src[t.pos] <= 'z') ||
 			       ('A' <= t.src[t.pos] && t.src[t.pos] <= 'Z') ||
 			       t.src[t.pos] === '_')) {
-				t.pos += 1;
+				t.pos += 1
 			}
-			t.token.type = 'identifier';
-			t.token.value = t.src.slice(start, t.pos);
-			return t.token;
+			t.token.type = 'identifier'
+			t.token.value = t.src.slice(start, t.pos)
+			return t.token
 		}
 
-		t.token.type = 'unknown';
-		t.token.value = c;
-		return t.token;
+		t.token.type = 'unknown'
+		t.token.value = c
+		return t.token
 	}
 
 	function peekToken (t) {
-		let _t = { ...t };
-		return readToken(_t);
+		let _t = { ...t }
+		return readToken(_t)
 	}
 
 	function evaluateExpression(src) {
 
-		let vals = [], ops = [];
+		let vals = [], ops = []
 
 		function err(t, msg) {
-			return { error: "index: " + t.pos + " | " + msg };
+			return { error: "index: " + t.pos + " | " + msg }
 		}
 
 		function prec(ch) {
-			return ({ '+':1, '-':1, '*':2, '/':2, '%':2, '^':3 })[ch] ?? -1;
+			return ({ '+':1, '-':1, '*':2, '/':2, '%':2, '^':3 })[ch] ?? -1
 		}
 
 		function calc(op) {
-			let b = vals.pop(), a = vals.pop();
+			let b = vals.pop(), a = vals.pop()
 			switch (op) {
 				case '+': {
-					vals.push(a + b);
-					return true;
+					vals.push(a + b)
+					return true
 				}
 
 				case '-': {
-					vals.push(a - b);
-					return true;
+					vals.push(a - b)
+					return true
 				}
 
 				case '*': {
-					vals.push(a * b);
-					return true;
+					vals.push(a * b)
+					return true
 				}
 
 				case '/': {
-					let r = a % b;
-					vals.push((a - r) / b);
-					return true;
+					let r = a % b
+					vals.push((a - r) / b)
+					return true
 				}
 
 				case '%': {
-					vals.push(a % b);
-					return true;
+					vals.push(a % b)
+					return true
 				}
 
 				case '^': {
-					vals.push(a ** b);
-					return true;
+					vals.push(a ** b)
+					return true
 				}
 			}
 
-			return false;
+			return false
 		}
 
 
-		let t = { pos: 0, src: src, token: { type: null, value: null } };
-		parse: for (;;) {
+		let t = { pos: 0, src: src, token: { type: null, value: null } }
+		parse: while (true) {
 			// Open Parentheses
-			let token = readToken(t);
+			let token = readToken(t)
 			while (token.value === '(') {
-				ops.push('(');
-				token = readToken(t);
+				ops.push('(')
+				token = readToken(t)
 			}
 
 			// Operand
 			switch (token.type) {
 				case 'number': {
-					vals.push(parseInt(token.value, 10));
-					break;
+					vals.push(parseInt(token.value, 10))
+					break
 				}
 
 				case 'identifier': {
-					let id = token.value;
-					let val = context[id];
+					let id = token.value
+					let val = context[id]
 					if (val) {
 						for (const ch of val) {
 							if (ch < '0' || '9' < ch) {
-								return err(t, "Context value: " + id + " contains non digits or decimals. string: " + val);
+								return err(t, "Context value: " + id + " contains non digits or decimals. string: " + val)
 							}
 						}
-						vals.push(parseInt(val, 10));
+						vals.push(parseInt(val, 10))
 					} else {
-						val = data.getAll(id);
+						val = data.getAll(id)
 						let nextToken = peekToken(t)
 						if (nextToken.value === '[') {
 							if (val.length === 0) {
-								return err(t, "Tried indexing id: " + id + " but it does not exist in the form data.");
+								return err(t, "Tried indexing id: " + id + " but it does not exist in the form data.")
 							}
-							ops.push(id);
-							ops.push('[');
-							readToken(t);
-							continue;
+							ops.push(id)
+							ops.push('[')
+							readToken(t)
+							continue
 						} else {
-							vals.push(val.length);
+							vals.push(val.length)
 						}
 					}
-					break;
+					break
 				}
 
 				case 'EOF': { 
-					break parse;
+					break parse
 				}
 
 				default: {
-					return err(t, "Expected an Operand but got: " + JSON.stringify(token));
+					return err(t, "Expected an Operand but got: " + JSON.stringify(token))
 				}
 			}
 
 			// Close Brackets
-			token = readToken(t);
+			token = readToken(t)
 			while (token.type === 'group') {
 				switch (token.value) {
 					case ')': {
 						while (ops.length && prec(ops[ops.length-1]) !== -1) {
-							calc(ops.pop());
+							calc(ops.pop())
 						}
 						if (!ops.length) {
-							return err(t, "No preceding '(' for ')'");
+							return err(t, "No preceding '(' for ')'")
 						}
-						let op = ops.pop();
+						let op = ops.pop()
 						if (op !== '(') {
-							return err(t, "Unexpected Operator preceding ')': " + op);
+							return err(t, "Unexpected Operator preceding ')': " + op)
 						}
-						break;
+						break
 					}
 
 					case ']': {
 						while (ops.length && prec(ops[ops.length-1]) !== -1) {
-							calc(ops.pop());
+							calc(ops.pop())
 						}
 
 						if (!ops.length) {
-							return err(t, "No preceding '[' for ']'");
+							return err(t, "No preceding '[' for ']'")
 						}
-						let currentOp = ops.pop();
+						let currentOp = ops.pop()
 						if (currentOp !== '[') {
-							return err(t, "Unexpected Operator preceding ']': " + currentOp);
+							return err(t, "Unexpected Operator preceding ']': " + currentOp)
 						}
 
-						let id = ops.pop();
-						let arr = data.getAll(id);
-						let idx = vals.pop();
-						let val = arr[idx];
+						let id = ops.pop()
+						let arr = data.getAll(id)
+						let idx = vals.pop()
+						let val = arr[idx]
 						if (val === undefined) {
-							return err(t, "Index out of range. id: " + id + " index: " + idx);
+							return err(t, "Index out of range. id: " + id + " index: " + idx)
 						}
 						if (!(typeof val === "string" || val instanceof String)) {
-							return err(t, "type of " + id + "[" + idx + "] is not a string");
+							return err(t, "type of " + id + "[" + idx + "] is not a string")
 						}
 						for (const ch of val) {
-							if (ch < '0' || '9' < ch) return err(t, id + "[" + idx + "] contains non digits or decimals. string: " + val);
+							if (ch < '0' || '9' < ch) return err(t, id + "[" + idx + "] contains non digits or decimals. string: " + val)
 						}
-						vals.push(parseInt(val, 10));
-						break;
+						vals.push(parseInt(val, 10))
+						break
 					}
 
 					default : {
-						return err(t, "Expected an Operator but got: " + JSON.stringify(token));
+						return err(t, "Expected an Operator but got: " + JSON.stringify(token))
 					}
 				}
-				token = readToken(t);
+				token = readToken(t)
 			}
 
 			// Operator
 
 			switch (token.type) {
 				case 'operator': {
-					let op = token.value;
+					let op = token.value
 					if (prec(op) <= prec(ops[ops.length-1])) {
 						calc(ops.pop())
 					}
-					ops.push(op);
-					break;
+					ops.push(op)
+					break
 				}
 				case 'EOF': {
-					break parse;
+					break parse
 				}
 				default : {
-					return err(t, "Expected an Operator but got: " + JSON.stringify(token));
+					return err(t, "Expected an Operator but got: " + JSON.stringify(token))
 				}
 			}
 		}
 
 		if (vals.length === 0) {
-			return { error: "Empty expression" };
+			return { error: "Empty expression" }
 		}
 
 		while (ops.length) {
 			let op= ops.pop()
 			if (!calc(op)) {
-				return { error: "Unclosed '" + op + "'" };
+				return { error: "Unclosed '" + op + "'" }
 			}
 		}
-		return vals[0];
+		return vals[0]
 	}
 
 	function processChild(child) {
 
 		function errAttr(attr, str) {
-			err("When processing " + attr + " | " + str);
+			err("When processing " + attr + " | " + str)
 		}
 
 		function warnAttr(attr, str) {
-			console.warn("hatch.html |  " + "When processing " + attr + " | " + str);
+			console.warn("hatch.html |  " + "When processing " + attr + " | " + str)
 		}
 
-		let clone = child.cloneNode(false);
+		let clone = child.cloneNode(false)
 
 		// process each attribute
 		for (const attr of clone.getAttributeNames()) {
 
 			if (!attr.startsWith("hh:")) {
-				continue;
+				continue
 			}
 
-			let name = attr.slice(3);
+			let name = attr.slice(3)
 
-			let expr = clone.getAttribute(attr);
-			clone.removeAttribute(attr);
+			let expr = clone.getAttribute(attr)
+			clone.removeAttribute(attr)
 
-			let val = undefined;
+			let val = undefined
 
-			let t = { pos: 0, src: expr, token: { type: null, value: null } };
+			let t = { pos: 0, src: expr, token: { type: null, value: null } }
 
-			let token = readToken(t);
+			let token = readToken(t)
 			if (token.type !== 'identifier') {
-				errAttr(attr,"Expected an Identifier but got: " + JSON.stringify(token));
-				continue;
+				errAttr(attr,"Expected an Identifier but got: " + JSON.stringify(token))
+				continue
 			}
 
-			let id = token.value;
+			let id = token.value
 
-			token = readToken(t);
+			token = readToken(t)
 			if (token.value === '[') {
-				let close = expr.lastIndexOf(']');
+				let close = expr.lastIndexOf(']')
 				if (close === -1) {
-					errAttr(attr, "Unclosed '['");
-					continue;
+					errAttr(attr, "Unclosed '['")
+					continue
 				}
 
-				let trail = expr.slice(close + 1);
+				let trail = expr.slice(close + 1)
 				let trailToken = readToken({ pos: 0, src: trail , token: { type: null, value: null } })
 				if (trailToken.type !== 'EOF') {
-					errAttr(attr, "Unexpected token after ']' : " + JSON.stringify(trailToken));
-					continue;
+					errAttr(attr, "Unexpected token after ']' : " + JSON.stringify(trailToken))
+					continue
 				}
 
-				let idxExpr = expr.slice(t.pos, close);
-				let idx = evaluateExpression(idxExpr);
+				let idxExpr = expr.slice(t.pos, close)
+				let idx = evaluateExpression(idxExpr)
 				if (idx.error) {
-					errAttr(attr, "Error when evaluating index expression: " + idx.error);
-					continue;
+					errAttr(attr, "Error when evaluating index expression: " + idx.error)
+					continue
 				}
 
-				val = data.getAll(id);
+				val = data.getAll(id)
 				if (val.length === 0) {
-					warnAttr(attr, "Form data: " + id + " does not exist");
-					continue;
+					warnAttr(attr, "Form data: " + id + " does not exist")
+					continue
 				}
 
-				val = val[idx];
+				val = val[idx]
 				if (val === undefined) {
-					errAttr(attr, "Form data: " + id + " index out of range: " + idx);
-					continue;
+					errAttr(attr, "Form data: " + id + " index out of range: " + idx)
+					continue
 				}
 
 			} else if (token.type === 'EOF') {
 
-				val = context[id];
+				val = context[id]
 				if (val === undefined) {
-					errAttr(attr, "Context: " + id + " is undefined");
-					continue;
+					errAttr(attr, "Context: " + id + " is undefined")
+					continue
 				}
 
 			} else {
-				errAttr(attr, "Unexpected token after " + id + " : " + JSON.stringify(token));
-				continue;
+				errAttr(attr, "Unexpected token after " + id + " : " + JSON.stringify(token))
+				continue
 			}
 
 			if (name === '') {
-				clone.textContent = val;
+				clone.textContent = val
 			} else {
-				clone.setAttribute(name, val);
+				clone.setAttribute(name, val)
 			}
 		}
 
-		return clone;
+		return clone
 	}
 
 	// deep clone and process all children form src to des
 	function processChildren(src, des) {
 		function processContext(val, key, unloopedChild, child) {
-			let _val = context[key];
+			let _val = context[key]
 
-			context[key] = val;
+			context[key] = val
 
-			let clone = processChild(unloopedChild);
-			des.appendChild(clone);
-			processChildren(child, clone);
+			let clone = processChild(unloopedChild)
+			des.appendChild(clone)
+			processChildren(child, clone)
 
-			context[key] = _val;
+			context[key] = _val
 		}
 
 		for (const child of src.childNodes) {
 			if (child.nodeType !== Node.ELEMENT_NODE) {
-				des.appendChild(child.cloneNode(true));
-				continue;
+				des.appendChild(child.cloneNode(true))
+				continue
 			}
 
-			let forExpr = child.getAttribute("hh-for");
+			let forExpr = child.getAttribute("hh-for")
 
 			if (forExpr) {
-				let contextVals = [];
-				let key = undefined;
-				let expr = undefined;
+				let contextVals = []
+				let key = undefined
+				let expr = undefined
 
-				let i = forExpr.indexOf(':');
+				let i = forExpr.indexOf(':')
 				// hh-for="expr" = no value added to context
 				// hh-for=":expr" = empty string as key of context
 				// hh-for="key:expr" = key as key of context
 				if (i === -1) {
-					key = null;
-					expr = forExpr;
+					key = null
+					expr = forExpr
 				} else {
-					key = forExpr.slice(0, i).trim();
-					expr = forExpr.slice(i + 1).trim();
+					key = forExpr.slice(0, i).trim()
+					expr = forExpr.slice(i + 1).trim()
 				}
 
-				let range = expr.indexOf("..");
+				let range = expr.indexOf("..")
 
 				if (range === -1) {
-					contextVals = data.getAll(expr);
+					contextVals = data.getAll(expr)
 				} else {
-					let hasErr = false;
+					let hasErr = false
 
-					let start = evaluateExpression(expr.slice(0, range).trim());
+					let start = evaluateExpression(expr.slice(0, range).trim())
 					if (start.error) {
-						err("Error when evaluating range start: " + start.error );
-						hasErr = true;
+						err("Error when evaluating range start: " + start.error )
+						hasErr = true
 					} else {
 						if (start < 0) {
-							err("Evaluated range start is less than zero");
-							hasErr = true;
+							err("Evaluated range start is less than zero")
+							hasErr = true
 						}
 					}
 
-					let end = evaluateExpression(expr.slice(range + 2).trim());
+					let end = evaluateExpression(expr.slice(range + 2).trim())
 					if (end.error) {
-						err("Error when evaluating range end: " + end.error);
-						hasErr = true;
+						err("Error when evaluating range end: " + end.error)
+						hasErr = true
 					} else {
 						if (end < 0) {
-							err("Evaluated range end is less than zero");
-							hasErr = true;
+							err("Evaluated range end is less than zero")
+							hasErr = true
 						}
 					}
 
 					if (!hasErr) {
 						if (start > end) {
 							while (start >= end) {
-								contextVals.push(String(start));
-								start -= 1;
+								contextVals.push(String(start))
+								start -= 1
 							}
 						} else {
 							while (start <= end) {
-								contextVals.push(String(start));
-								start += 1;
+								contextVals.push(String(start))
+								start += 1
 							}
 						}
 					}
 				}
 
-				let unloopedChild = child.cloneNode(false);
-				unloopedChild.removeAttribute("hh-for");
+				let unloopedChild = child.cloneNode(false)
+				unloopedChild.removeAttribute("hh-for")
 
-				let spacer = null;
-				let prev = child.previousSibling;
+				let spacer = null
+				let prev = child.previousSibling
 				if (prev && prev.nodeType === Node.TEXT_NODE) {
-					let text = prev.textContent;
-					let idx = text.length;
+					let text = prev.textContent
+					let idx = text.length
 					while (idx) {
-						idx -= 1;
+						idx -= 1
 						if (text[idx] === '\n') {
-							break;
+							break
 						}
 						if (text[idx].trim() !== '') {
-							idx += 1;
-							break;
+							idx += 1
+							break
 						}
 					}
-					let ws = text.slice(idx);
+					let ws = text.slice(idx)
 					if (ws) {
-						spacer = new Text(ws);
+						spacer = new Text(ws)
 					}
 				}
 
 				// I know the flow is weird but putting if outside the loop is generally faster
 				// I will profile it later
-				let count = contextVals.length;
+				let count = contextVals.length
 				if (key ===  null) {
 					if (count) {
-						count -= 1;
-						unloopedChild = processChild(unloopedChild);
-						let clone = des.appendChild(unloopedChild.cloneNode(false));
-						processChildren(child, clone);
+						count -= 1
+						unloopedChild = processChild(unloopedChild)
+						let clone = des.appendChild(unloopedChild.cloneNode(false))
+						processChildren(child, clone)
 					}
 
 					if (spacer) {
 						while (count) {
-							count -= 1;
-							des.appendChild(spacer.cloneNode(true));
-							let clone = des.appendChild(unloopedChild.cloneNode(false));
-							processChildren(child, clone);
+							count -= 1
+							des.appendChild(spacer.cloneNode(true))
+							let clone = des.appendChild(unloopedChild.cloneNode(false))
+							processChildren(child, clone)
 						}
 					}
 					else {
 						while (count) {
-							count -= 1;
-							let clone = des.appendChild(unloopedChild.cloneNode(false));
-							processChildren(child, clone);
+							count -= 1
+							let clone = des.appendChild(unloopedChild.cloneNode(false))
+							processChildren(child, clone)
 						}
 					}
 				} else {
 					if (count) {
-						processContext(contextVals[contextVals.length - count], key, unloopedChild, child);
-						count -= 1;
+						processContext(contextVals[contextVals.length - count], key, unloopedChild, child)
+						count -= 1
 					}
 
 					if (spacer) {
 						while (count) {
-							des.appendChild(spacer.cloneNode(true));
-							processContext(contextVals[contextVals.length - count], key, unloopedChild, child);
-							count -= 1;
+							des.appendChild(spacer.cloneNode(true))
+							processContext(contextVals[contextVals.length - count], key, unloopedChild, child)
+							count -= 1
 						}
 					}
 					else {
 						while (count) {
-							processContext(contextVals[contextVals.length - count], key, unloopedChild, child);
-							count -= 1;
+							processContext(contextVals[contextVals.length - count], key, unloopedChild, child)
+							count -= 1
 						}
 					}
 				}
 
 			} else {
 
-				let clone = processChild(child);
-				des.appendChild(clone);
-				processChildren(child, clone);
+				let clone = processChild(child)
+				des.appendChild(clone)
+				processChildren(child, clone)
 
 			}
 		}
 	}
 
-
 	if (html instanceof HTMLElement) {
 		if (html instanceof HTMLTemplateElement) {
-			html = html.content;
+			html = html.content
 		}
 	} else {
 		err(html + " is not a HTML element")
-		return null;
+		return [null, errors]
 	}
 
-	let hatched = undefined;
+	let hatched = undefined
 	if (data) {
-		hatched = html.cloneNode(false);
-		processChildren(html, hatched);
+		hatched = html.cloneNode(false)
+		processChildren(html, hatched)
 	} else {
-		hatched = html.cloneNode(true);
+		hatched = html.cloneNode(true)
 	}
-	return hatched;
+	return [hatched, errors]
 }
