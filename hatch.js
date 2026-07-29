@@ -16,7 +16,7 @@ function hatch(e, cfg) {
 
 	let form = e.target
 
-	cfg = { hatch.cfg, ...cfg }
+	cfg = { ...hatch.cfg, ...cfg }
 
 	if (!(form instanceof HTMLFormElement)) {
 		cfg.onError(new Error("event target is not a form element: " + form))
@@ -27,9 +27,9 @@ function hatch(e, cfg) {
 		return false
 	}
 
-	let action = e.submitter?.formaction || form.action || ''
+	let action = (e.submitter && e.submitter.getAttribute('formaction')) || form.getAttribute('action') || ''
 	let target = e.submitter?.formtarget || form.target || ''
-	let method = e.submitter?.formmethod || form.method || 'GET'
+	let method = (e.submitter && e.submitter.getAttribute('formmethod')) || form.getAttribute('method') || 'GET'
 
 	method = method.toUpperCase()
 	if(!["GET","POST","PUT","PATCH","DELETE"].includes(method)) {
@@ -64,7 +64,20 @@ function hatch(e, cfg) {
 
 		form._hatchDebounce = setTimeout(() => {
 			fetch(action, init)
-				.then((r) => r.text())
+				.then((r) => {
+					let header = r.headers.get('hh-data')
+					if (header) {
+						let searchParams = new URLSearchParams(header);
+						let newData= new FormData();
+						for (const [key, value] of searchParams.entries()) {
+							newData.append(key, value);
+						}
+						data = newData
+					} else {
+						data = null
+					}
+					return r.text()
+				})
 				.then((html) => {
 					let template = document.createElement('template')
 					template.innerHTML = html
@@ -81,32 +94,24 @@ function hatch(e, cfg) {
 	} else {
 		let html = document.querySelector(action)
 
-		form._hatchDebounce = setTimeout(() => {
-			let [hatched, errors] = hatch.html(html, data)
-			if (errors.length !== 0) {
-				cfg.onError(new Error(errors.join('\n')))
-				return false
-			}
-			swap(hatched, target)
-			cfg.onFinish()
-		}, cfg.debounce)
-
-		form._hatchAbort = {
-			abort : (error) => {
-				clearTimeout(form._hatchTimeout)
-				clearTimeout(form._hatchDebounce)
-				if (error) {
-					cfg.onError(error)
-				} else {
-					cfg.onError(new Error("The operation was aborted.", 'AbortError'))
-				}
-				cfg.onFinish()
-			}
-		}
-
+		form._hatchAbort = new AbortController()
 		if (cfg.timeout) {
-			form._hatchTimeout = setTimeout(() => form._hatchAbort.abort(new DOMException('Timeout', 'TimeoutError')), cfg.timeout)
+			form._hatchTimeout = setTimeout(
+				() => form._hatchAbort.abort(new DOMException('Timeout', 'TimeoutError')),
+				cfg.timeout
+			)
 		}
+
+		form._hatchDebounce = setTimeout(() => {
+			new Promise((resolve, reject) => {
+				let [hatched, errors] = hatch.html(html, data)
+				if (errors.length) reject(new Error(errors.join('\n')))
+				else resolve(hatched)
+			})
+			.then(hatched => swap(hatched, target))
+			.catch(cfg.onError)
+			.finally(cfg.onFinish)
+		}, cfg.debounce)
 	}
 
 	return false;
@@ -132,6 +137,9 @@ hatch.cfg = {
 	},
 
 	onFormData: (data) => {
+		if (data.keys().next().done) {
+			return null
+		}
 		return data
 	},
 
@@ -415,6 +423,7 @@ hatch.html = function (html, data, context = {}) {
 		}
 
 		let clone = child.cloneNode(false)
+		let textContentAltered = false
 
 		// process each attribute
 		for (const attr of clone.getAttributeNames()) {
@@ -463,10 +472,6 @@ hatch.html = function (html, data, context = {}) {
 				}
 
 				val = data.getAll(id)
-				if (val.length === 0) {
-					warnAttr(attr, "Form data: " + id + " does not exist")
-					continue
-				}
 
 				val = val[idx]
 				if (val === undefined) {
@@ -478,8 +483,7 @@ hatch.html = function (html, data, context = {}) {
 
 				val = context[id]
 				if (val === undefined) {
-					errAttr(attr, "Context: " + id + " is undefined")
-					continue
+					val = data.getAll(id).length
 				}
 
 			} else {
@@ -489,12 +493,13 @@ hatch.html = function (html, data, context = {}) {
 
 			if (name === '') {
 				clone.textContent = val
+				textContentAltered = true
 			} else {
 				clone.setAttribute(name, val)
 			}
 		}
 
-		return clone
+		return [clone, textContentAltered]
 	}
 
 	// deep clone and process all children form src to des
@@ -504,11 +509,25 @@ hatch.html = function (html, data, context = {}) {
 
 			context[key] = val
 
-			let clone = processChild(unloopedChild)
+			let [clone, textContentAltered] = processChild(unloopedChild)
 			des.appendChild(clone)
-			processChildren(child, clone)
+			if (!textContentAltered) {
+				processChildren(child, clone)
+			}
 
 			context[key] = _val
+		}
+
+		function isValidIdentifier(str) {
+			let t = { pos: 0, src: str, token: { type: null, value: null } }
+			let token = readToken(t)
+			if (token.type === 'identifier') {
+				token = readToken(t)
+				if (token.type === 'EOF') {
+					return true
+				}
+			}
+			return false
 		}
 
 		for (const child of src.childNodes) {
@@ -526,7 +545,7 @@ hatch.html = function (html, data, context = {}) {
 
 				let i = forExpr.indexOf(':')
 				// hh-for="expr" = no value added to context
-				// hh-for=":expr" = empty string as key of context
+				// hh-for=":expr" = expr as key of context
 				// hh-for="key:expr" = key as key of context
 				if (i === -1) {
 					key = null
@@ -539,9 +558,34 @@ hatch.html = function (html, data, context = {}) {
 				let range = expr.indexOf("..")
 
 				if (range === -1) {
-					contextVals = data.getAll(expr)
+					if (isValidIdentifier(expr)) {
+						contextVals = data.getAll(expr)
+					} else {
+						err("Expression is not a valid identifer: " + expr)
+					}
+
+					if (key !== null) {
+						if (key === '') {
+							key = expr
+						} else {
+							if (!isValidIdentifier(key)) {
+								err("Key is not a valid identifer: " + key)
+							}
+						}
+					}
 				} else {
 					let hasErr = false
+
+					if (key !== null) {
+						if (key === '') {
+							err("Shadowing is not allowed inside a range expression '..'")
+							hasErr = true
+						} else {
+							if (!isValidIdentifier(key)) {
+								err("Key is not a valid identifer: " + key)
+							}
+						}
+					}
 
 					let start = evaluateExpression(expr.slice(0, range).trim())
 					if (start.error) {
@@ -608,26 +652,44 @@ hatch.html = function (html, data, context = {}) {
 				// I will profile it later
 				let count = contextVals.length
 				if (key ===  null) {
+					let processedChild = undefined
+					let textContentAltered = undefined
+
 					if (count) {
+						[processedChild, textContentAltered] = processChild(unloopedChild)
+						if (textContentAltered) {
+							des.appendChild(processedChild.cloneNode(true))
+						} else {
+							let clone = des.appendChild(unloopedChild.cloneNode(false))
+							processChildren(child, clone)
+						}
+
 						count -= 1
-						unloopedChild = processChild(unloopedChild)
-						let clone = des.appendChild(unloopedChild.cloneNode(false))
-						processChildren(child, clone)
 					}
 
 					if (spacer) {
 						while (count) {
-							count -= 1
 							des.appendChild(spacer.cloneNode(true))
-							let clone = des.appendChild(unloopedChild.cloneNode(false))
-							processChildren(child, clone)
+							if (textContentAltered) {
+								des.appendChild(processedChild.cloneNode(true))
+							} else {
+								let clone = des.appendChild(unloopedChild.cloneNode(false))
+								processChildren(child, clone)
+							}
+
+							count -= 1
 						}
 					}
 					else {
 						while (count) {
+							if (textContentAltered) {
+								des.appendChild(processedChild.cloneNode(true))
+							} else {
+								let clone = des.appendChild(unloopedChild.cloneNode(false))
+								processChildren(child, clone)
+							}
+
 							count -= 1
-							let clone = des.appendChild(unloopedChild.cloneNode(false))
-							processChildren(child, clone)
 						}
 					}
 				} else {
@@ -652,11 +714,11 @@ hatch.html = function (html, data, context = {}) {
 				}
 
 			} else {
-
-				let clone = processChild(child)
+				let [clone, textContentAltered] = processChild(child)
 				des.appendChild(clone)
-				processChildren(child, clone)
-
+				if (!textContentAltered) {
+					processChildren(child, clone)
+				}
 			}
 		}
 	}
