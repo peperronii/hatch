@@ -63,40 +63,38 @@ or with config
 but right now it is what it is
 
 if action does not start with '#'
-it will send a fetch request instead
+it will send a fetch request instead.
 hatch will expect a response with HTML as body
 (the HTML can be just Document Fragments)
-and a header 'hh-data' that is a url encoded form data
+and a header 'hh-data', which is a url encoded form data.
 it will use that data to render the HTML body using hatch's templating system
-then swap it into the DOM in an out of band way
-go take a look at
+then swap it into the DOM.
+go take a look at the `function swap` for more context
 
 ## templating system
 
 hatch's templating system uses html attributes to mark where the value should go
 
-`hh:="key[0]"` render the textContent to the value of key[0]
-`hh:attribute="key[0]"` render the attribute's value to the value of key[0]
-`hh-for="i:key"` iterate over the values of keys. inside this element and its children 'i' will now be the value of the iteration i.e. Context
+- `hh:="key[0]"` render the textContent to the value of key[0]
+- `hh:attribute="key[0]"` render the attribute's value to the value of key[0]
+- `hh-for="i:key"` iterate over the values of keys. inside this element and its children 'i' will now be the value of the iteration i.e. Context
+
 inside hh-for you can use 'i' in the same way you use of 'key[0]' in the example above
 if the value of 'i' is an integer you can also do 'anotherKey[i]' to index the data
 
-you can also shadow the key
-`hh-for="key:key"`
-or using its shorthand
-`hh-for=":key"`
+you can also shadow the key `hh-for="key:key"` or using its shorthand `hh-for=":key"`
 
 I'm still on edge on whether or not to add reverse iteration for this form of loop.
 I know it is convenient but I want to encourage the user to actually prepare the array BEFORE templating it.
 
-`hh-for="i:0..key"` iterate over the range from 0 to the length of key, inclusive.
+- `hh-for="i:0..key"` iterate over the range from 0 to the length of key, inclusive.
 note that this example will result in array out of bound, the usual pattern would be
-`hh-for="i:0..key-1"`
+- `hh-for="i:0..key-1"`
 this also works descending
-`hh-for="i:key-1..0"`
+- `hh-for="i:key-1..0"`
 
 Note that using `key` of a form data inside an expression will always result in the length of the expression
-but a Context's `key` will use its value and cannot be indexed, so becareful when shadowing
+but a Context's `key` will use its value and cannot be indexed, so be careful when shadowing.
 
 ## Tests
 
