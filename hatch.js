@@ -1,288 +1,743 @@
 function hatch(e, cfg) {	
 
-	e.preventDefault();
-
-	let form = e.target;
-	let target = e.submitter.formaction || form.action;
-	let data = new FormData(form);
-
-
-	if (!!cfg.prep) {
-		if (typeof cfg.prep === "function") {
-			data = cfg.prep(data);
-		} else {
-			console.error("hatch: " + cfg.prep + " is not a function.");
-			return false;
+	function swap(doc, target) {
+		for (const el of [...doc.children]) {
+			let id = el.getAttribute('hh-id') || el.id;
+			el.removeAttribute('hh-id');
+			if ( '#' + id === target) continue
+			document.getElementById(id)?.replaceWith(el)
+		}
+		if (target && target !== '') {
+		    document.querySelector(target)?.replaceWith(...doc.children)
 		}
 	}
 
-	let template = null;
-	if (target.startsWith('#')) {
-		hatchFromTemplate(target, data)
-		return false;
+	e.preventDefault()
+
+	let form = e.target
+
+	cfg = { ...hatch.cfg, ...cfg }
+
+	if (!(form instanceof HTMLFormElement)) {
+		cfg.onError(new Error("event target is not a form element: " + form))
+		return false
 	}
 
-	let method = form.getAttribute("method") || "get";
+	if (!cfg.onValidation(form)) {
+		return false
+	}
+
+	let action = (e.submitter && e.submitter.getAttribute('formaction')) || form.getAttribute('action') || ''
+	let target = e.submitter?.formtarget || form.target || ''
+	let method = (e.submitter && e.submitter.getAttribute('formmethod')) || form.getAttribute('method') || 'GET'
+
+	method = method.toUpperCase()
+	if(!["GET","POST","PUT","PATCH","DELETE"].includes(method)) {
+		cfg.onError(new Error("Invalid method: " + method))
+		return false
+	}
+
+	let data = cfg.onFormData(new FormData(form))
+
+	if (form._hatchDebounce) clearTimeout(form._hatchDebounce)
+	if (form._hatchTimeout) clearTimeout(form._hatchTimeout)
+	if (form._hatchAbort) form._hatchAbort.abort()
+
+	cfg.onLoad()
+
+	if (!action.startsWith('#')) {
+
+		form._hatchAbort = new AbortController()
+		if (cfg.timeout) {
+			form._hatchTimeout = setTimeout(() => form._hatchAbort.abort(new DOMException('Timeout', 'TimeoutError')), cfg.timeout)
+		}
+
+
+		let init = { signal: form._hatchAbort.signal, method }
+		let b = new URLSearchParams(data)
+		if (method === 'GET' || method === 'DELETE') {
+			action = action + '?' + b
+		} else {
+			init.body = b
+			init.headers = { 'Content-Type': 'application/x-www-form-urlencoded' }
+		}
+
+		form._hatchDebounce = setTimeout(() => {
+			fetch(action, init)
+				.then((r) => {
+					let header = r.headers.get('hh-data')
+					if (header) {
+						let searchParams = new URLSearchParams(header);
+						let newData= new FormData();
+						for (const [key, value] of searchParams.entries()) {
+							newData.append(key, value);
+						}
+						data = newData
+					} else {
+						data = null
+					}
+					return r.text()
+				})
+				.then((html) => {
+					let template = document.createElement('template')
+					template.innerHTML = html
+					let [hatched, errors] = hatch.html(template, data)
+					if (errors.length !== 0) {
+						throw new Error(errors.join('\n'))
+					}
+					swap(hatched, target)
+				})
+				.catch(cfg.onError)
+				.finally(cfg.onFinish)
+		}, cfg.debounce)
+
+	} else {
+		let html = document.querySelector(action)
+
+		form._hatchAbort = new AbortController()
+		if (cfg.timeout) {
+			form._hatchTimeout = setTimeout(
+				() => form._hatchAbort.abort(new DOMException('Timeout', 'TimeoutError')),
+				cfg.timeout
+			)
+		}
+
+		form._hatchDebounce = setTimeout(() => {
+			new Promise((resolve, reject) => {
+				let [hatched, errors] = hatch.html(html, data)
+				if (errors.length) reject(new Error(errors.join('\n')))
+				else resolve(hatched)
+			})
+			.then(hatched => swap(hatched, target))
+			.catch(cfg.onError)
+			.finally(cfg.onFinish)
+		}, cfg.debounce)
+	}
+
+	return false;
 }
 
-function hatchFromTemplate(t, data) {
-	function evaluateMathExpression(data, expression) {
-		const TokenType = Object.freeze({
-			OPERATOR: 1,
-			NUM: 2,
-			IDEN: 3,
-		});
+hatch.cfg = {
+	debounce: 0,
+	timeout: 2000,
+	onError: (error) => { 
+		if (error.name === 'AbortError') {
+			console.warn("hatch | " + error.message)
+		}
+		else {
+			console.error("hatch | " + error.message)
+		}
+	},
 
-		class Tokenizer {
-			constructor(src) {
-				this.src = src;
-				this.idx = 0;
-				this.char = this.src[this.idx];
+	onValidation: (form) => {
+		if (!form.reportValidity()) {
+			return false
+		}
+		return true
+	},
+
+	onFormData: (data) => {
+		if (data.keys().next().done) {
+			return null
+		}
+		return data
+	},
+
+	onLoad: () => {},
+	onFinish: () => {},
+}
+
+hatch.html = function (html, data, context = {}) {
+
+	let errors = [];
+
+	function err(str) {
+		errors.push("hatch.html | " + str)
+	}
+
+	function readToken(t) {
+
+		while (t.pos < t.src.length && t.src[t.pos].trim() === '') {
+			t.pos += 1
+		}
+
+		let c = t.src[t.pos]
+
+		if (c === undefined) {
+			t.token.type = 'EOF'
+			t.token.value = null
+			return t.token
+		}
+
+		if ('0' <= c && c <= '9') {
+			let start = t.pos
+			t.pos += 1
+			while (t.pos < t.src.length && '0' <= t.src[t.pos] && t.src[t.pos] <= '9') {
+				t.pos += 1
 			}
 
-			read() {
-				this.idx += 1;
-				this.char = this.src[this.idx];
-				return this.char;
+			t.token.type = 'number'
+			t.token.value = t.src.slice(start, t.pos)
+			return t.token
+		}
+
+		if ('+-*/%^'.indexOf(c) > -1) {
+			t.pos += 1
+			t.token.type = 'operator'
+			t.token.value = c
+			return t.token
+		}
+
+		if ('()[]'.indexOf(c) > -1) {
+			t.pos += 1
+			t.token.type = 'group'
+			t.token.value = c
+			return t.token
+		}
+
+		if (('a' <= c && c <= 'z') || ('A' <= c && c <= 'Z') || c === '_') {
+			let start = t.pos
+			t.pos += 1
+			while (t.pos < t.src.length &&
+			       (('0' <= t.src[t.pos] && t.src[t.pos] <= '9') ||
+			       ('a' <= t.src[t.pos] && t.src[t.pos] <= 'z') ||
+			       ('A' <= t.src[t.pos] && t.src[t.pos] <= 'Z') ||
+			       t.src[t.pos] === '_')) {
+				t.pos += 1
 			}
+			t.token.type = 'identifier'
+			t.token.value = t.src.slice(start, t.pos)
+			return t.token
+		}
 
-			// undefined = EOF
-			scan() {
-				if (this.char === undefined ) return undefined;
+		t.token.type = 'unknown'
+		t.token.value = c
+		return t.token
+	}
 
-				// skip whitespaces
-				for (this.char.trim() === '') {
-					this.read();
+	function peekToken (t) {
+		let _t = { ...t }
+		return readToken(_t)
+	}
+
+	function evaluateExpression(src) {
+
+		let vals = [], ops = []
+
+		function err(t, msg) {
+			return { error: "index: " + t.pos + " | " + msg }
+		}
+
+		function prec(ch) {
+			return ({ '+':1, '-':1, '*':2, '/':2, '%':2, '^':3 })[ch] ?? -1
+		}
+
+		function calc(op) {
+			let b = vals.pop(), a = vals.pop()
+			switch (op) {
+				case '+': {
+					vals.push(a + b)
+					return true
 				}
 
-				const token = {}
+				case '-': {
+					vals.push(a - b)
+					return true
+				}
 
-				switch (this.char) {
-				case undefined:
-					return undefined;
-				case '+':
-					token.type = TokenType.OPERATOR;
-					token.data = '+';
-					return token;
-				case '-':
-					token.type = TokenType.OPERATOR;
-					token.data = '-';
-					return token;
-				case '*':
-					token.type = TokenType.OPERATOR;
-					token.data = '*';
-					return token;
-				case '/':
-					token.type = TokenType.OPERATOR;
-					token.data = '/';
-					return token;
-				case '^':
-					token.type = TokenType.OPERATOR;
-					token.data = '^';
-					return token;
-				case '(':
-					token.type = TokenType.OPERATOR;
-					token.data = '(';
-					return token;
-				case ')':
-					token.type = TokenType.OPERATOR;
-					token.data = ')';
-					return token;
-				case '[':
-					token.type = TokenType.OPERATOR;
-					token.data = '[';
-					return token;
-				case ']':
-					token.type = TokenType.OPERATOR;
-					token.data = ']';
-					return token;
-				default:
-					if (token.type === undefined) {
-						if (this.char >= '0' && this.char <= '9') {
-							token.type = TokenType.NUM;
-						} else {
-							token.type = TokenType.IDEN;
-						}
-					}
-					token.data = '';
-					for (;;) {
-						if (this.char.trim() === '') {
-							break;
-						}
-						if ('[(+-*/^)]'.indexOf(this.char) > -1) {
-							break;
-						}
-						token.data = token.data + this.char;
-					}
-					return token;
+				case '*': {
+					vals.push(a * b)
+					return true
+				}
+
+				case '/': {
+					let r = a % b
+					vals.push((a - r) / b)
+					return true
+				}
+
+				case '%': {
+					vals.push(a % b)
+					return true
+				}
+
+				case '^': {
+					vals.push(a ** b)
+					return true
 				}
 			}
 
-			peek() {
-				let _idx = this.idx;
-				let _char = this.char;
-				let token = this.scan();
-				this.idx = _idx;
-				this.char = _char
-				return token;
+			return false
+		}
+
+
+		let t = { pos: 0, src: src, token: { type: null, value: null } }
+		parse: while (true) {
+			// Open Parentheses
+			let token = readToken(t)
+			while (token.value === '(') {
+				ops.push('(')
+				token = readToken(t)
 			}
-		}
 
-
-		let tokenizer = new Tokenizer(src);
-
-		let operands = [];
-		let operators = [];
-
-		function errorHelper(idx, msg) { return { error: "index: " + idx + " | " + msg }; }
-		function compute(operands, operator) {
-			switch (operator) {
-			case '+':
-				operands.push(operands.pop() + operands.pop());
-				break;
-			case '-':
-				let sub = operands.pop()
-				let min = operands.pop()
-				operands.push(min - sub);
-				break;
-			case '*':
-				operands.push(operands.pop() * operands.pop());
-				break;
-			case '/':
-				let den = operands.pop();
-				let num = operands.pop();
-				let rem = num % den;
-				// floor division
-				operands.push((num - rem) / den);
-				break;
-			case '%':
-				let mod = operands.pop();
-				let div = operands.pop();
-				let rem = div % mod;
-				operands.push(rem);
-				break;
-			case '^':
-				let expo = operands.pop();
-				let base = operands.pop();
-				operands.push(operands.pop() ^ operands.pop());
-				break;
-			}
-		}
-		function getPrecedence(ch) {
-			return '+-*/%^'.indexOf(ch);
-		}
-
-		for (;;) {
-			let token = tokenizer.scan();
+			// Operand
 			switch (token.type) {
-			case TokenType.OPERATOR:
-				let precedence = '+-*/^'.indexOf(token.data);
-				if (precedence > -1) {
-					let operator = operators.at(-1);
-					if (getPrecedence(operator) >= precedence) {
-						operators.pop();
-						compute(operands, operator)
-					}
-					operators.push(token.data);
-				} else if (token.data === '(' || token.data === '[') {
-					operators.push(token.data);
-				} else if (token.data === ')') {
-					for (;;) {
-						let operator = operators.pop();
-						if (getPrecedence(operator) !== -1) {
-							compute(operands, operator);
-							continue;
-						} else if (operator === '(') {
-							break;
-						} else if (operator === undefined) {
-							return errorHelper(tokenizer.idx, "No preceding '(' for ')'");
-						}
-						// Should not reach
-						return errorHelper("[ASSERT]: undefined operator inside '()': " + operator);
-					}
-				} else if (token.data === ']') {
-					for (;;) {
-						let operator = operators.pop();
-						if (getPrecedence(operator) !== -1) {
-							compute(operands, operator);
-							continue;
-						} else if (operator === '[') {
-							break;
-						} else if (operator === undefined) {
-							return errorHelper(tokenizer.idx, "No preceding 'id[' for ']'");
-						}
-						// Should not reach
-						return errorHelper(tokenizer.idx, "[ASSERT]: undefined operator inside '[]': " + operator);
-					}
+				case 'number': {
+					vals.push(parseInt(token.value, 10))
+					break
+				}
 
-					let id = operators.pop();
-					if (id === undefined) {
-						// Should not reach
-						return errorHelper(tokenizer.idx, "[ASSERT]: no preceding id for '[]' operation");
-					}
-					let idx = operands.pop();
-					let num = data.getAll(id)[idx];
-					if (num === undefined) {
-						return errorHelper(tokenizer.idx, "Index out of range or invalid. array: " + id + " index: " + idx);
-					} else if (typeof num === "string" || num instanceof String) {
-						for (ch of num) {
-							if (ch < "0" || ch > "9") {
-								return errorHelper(tokenizer.idx, id + "[" + idx + "] contains non digits or decimals. ch: " + ch);
+				case 'identifier': {
+					let id = token.value
+					let val = context[id]
+					if (val) {
+						for (const ch of val) {
+							if (ch < '0' || '9' < ch) {
+								return err(t, "Context value: " + id + " contains non digits or decimals. string: " + val)
 							}
 						}
-						operands.push(parseInt(num, 10));
+						vals.push(parseInt(val, 10))
 					} else {
-						return errorHelper(tokenizer.idx, "type of " + id + "[" + idx + "] is not a string" )
+						val = data.getAll(id)
+						let nextToken = peekToken(t)
+						if (nextToken.value === '[') {
+							if (val.length === 0) {
+								return err(t, "Tried indexing id: " + id + " but it does not exist in the form data.")
+							}
+							ops.push(id)
+							ops.push('[')
+							readToken(t)
+							continue
+						} else {
+							vals.push(val.length)
+						}
+					}
+					break
+				}
+
+				case 'EOF': { 
+					break parse
+				}
+
+				default: {
+					return err(t, "Expected an Operand but got: " + JSON.stringify(token))
+				}
+			}
+
+			// Close Brackets
+			token = readToken(t)
+			while (token.type === 'group') {
+				switch (token.value) {
+					case ')': {
+						while (ops.length && prec(ops[ops.length-1]) !== -1) {
+							calc(ops.pop())
+						}
+						if (!ops.length) {
+							return err(t, "No preceding '(' for ')'")
+						}
+						let op = ops.pop()
+						if (op !== '(') {
+							return err(t, "Unexpected Operator preceding ')': " + op)
+						}
+						break
+					}
+
+					case ']': {
+						while (ops.length && prec(ops[ops.length-1]) !== -1) {
+							calc(ops.pop())
+						}
+
+						if (!ops.length) {
+							return err(t, "No preceding '[' for ']'")
+						}
+						let currentOp = ops.pop()
+						if (currentOp !== '[') {
+							return err(t, "Unexpected Operator preceding ']': " + currentOp)
+						}
+
+						let id = ops.pop()
+						let arr = data.getAll(id)
+						let idx = vals.pop()
+						let val = arr[idx]
+						if (val === undefined) {
+							return err(t, "Index out of range. id: " + id + " index: " + idx)
+						}
+						if (!(typeof val === "string" || val instanceof String)) {
+							return err(t, "type of " + id + "[" + idx + "] is not a string")
+						}
+						for (const ch of val) {
+							if (ch < '0' || '9' < ch) return err(t, id + "[" + idx + "] contains non digits or decimals. string: " + val)
+						}
+						vals.push(parseInt(val, 10))
+						break
+					}
+
+					default : {
+						return err(t, "Expected an Operator but got: " + JSON.stringify(token))
 					}
 				}
-				break;
-			case TokenType.NUM:
-				for (ch of token.data) {
-					if (ch < "0" || ch > "9") {
-						return errorHelper(tokenizer.idx, "Potential number literal contains non digits or decimals. ch: " + ch);
+				token = readToken(t)
+			}
+
+			// Operator
+
+			switch (token.type) {
+				case 'operator': {
+					let op = token.value
+					if (prec(op) <= prec(ops[ops.length-1])) {
+						calc(ops.pop())
 					}
+					ops.push(op)
+					break
 				}
-				operands.push(parseInt(num, 10));
-				break;
-			case TokenType.IDEN:
-				let next_token = tokenizer.peek();
-				if (next_token.type === TokenType.OPERATOR && next_token.data === '[') {
-					operators.push(token.data);
-				} else {
-					operands.push(data.getAll(token.data).length);
+				case 'EOF': {
+					break parse
 				}
-				break;
+				default : {
+					return err(t, "Expected an Operator but got: " + JSON.stringify(token))
+				}
 			}
 		}
-	}
-	function cloneChildren(src, des, data, stack) {
-		for (const child of src.childNodes) {
-			let forExpr = child.getAttribute("hh-for");
-			if (!!forExpr) {
-				const i = forExpr.indexOf(':');
-				const varibale = str.slice(0, index).trim();
-				const expression = str.slice(index + 1).trim();
+
+		if (vals.length === 0) {
+			return { error: "Empty expression" }
+		}
+
+		while (ops.length) {
+			let op= ops.pop()
+			if (!calc(op)) {
+				return { error: "Unclosed '" + op + "'" }
 			}
-			const clone = des.appendChild(child.cloneNode(false));
-			if (clone.nodeType !== Node.ELEMENT_NODE) {
+		}
+		return vals[0]
+	}
+
+	function processChild(child) {
+
+		function errAttr(attr, str) {
+			err("When processing " + attr + " | " + str)
+		}
+
+		function warnAttr(attr, str) {
+			console.warn("hatch.html |  " + "When processing " + attr + " | " + str)
+		}
+
+		let clone = child.cloneNode(false)
+		let textContentAltered = false
+
+		// process each attribute
+		for (const attr of clone.getAttributeNames()) {
+
+			if (!attr.startsWith("hh:")) {
 				continue
 			}
 
-			for (const attr of clone.getAttributeNames()) {
+			let name = attr.slice(3)
 
+			let expr = clone.getAttribute(attr)
+			clone.removeAttribute(attr)
+
+			let val = undefined
+
+			let t = { pos: 0, src: expr, token: { type: null, value: null } }
+
+			let token = readToken(t)
+			if (token.type !== 'identifier') {
+				errAttr(attr,"Expected an Identifier but got: " + JSON.stringify(token))
+				continue
 			}
-			cloneChildren(child, clone);
+
+			let id = token.value
+
+			token = readToken(t)
+			if (token.value === '[') {
+				let close = expr.lastIndexOf(']')
+				if (close === -1) {
+					errAttr(attr, "Unclosed '['")
+					continue
+				}
+
+				let trail = expr.slice(close + 1)
+				let trailToken = readToken({ pos: 0, src: trail , token: { type: null, value: null } })
+				if (trailToken.type !== 'EOF') {
+					errAttr(attr, "Unexpected token after ']' : " + JSON.stringify(trailToken))
+					continue
+				}
+
+				let idxExpr = expr.slice(t.pos, close)
+				let idx = evaluateExpression(idxExpr)
+				if (idx.error) {
+					errAttr(attr, "Error when evaluating index expression: " + idx.error)
+					continue
+				}
+
+				val = data.getAll(id)
+
+				val = val[idx]
+				if (val === undefined) {
+					errAttr(attr, "Form data: " + id + " index out of range: " + idx)
+					continue
+				}
+
+			} else if (token.type === 'EOF') {
+
+				val = context[id]
+				if (val === undefined) {
+					val = data.getAll(id).length
+				}
+
+			} else {
+				errAttr(attr, "Unexpected token after " + id + " : " + JSON.stringify(token))
+				continue
+			}
+
+			if (name === '') {
+				clone.textContent = val
+				textContentAltered = true
+			} else {
+				clone.setAttribute(name, val)
+			}
+		}
+
+		return [clone, textContentAltered]
+	}
+
+	// deep clone and process all children form src to des
+	function processChildren(src, des) {
+		function processContext(val, key, unloopedChild, child) {
+			let _val = context[key]
+
+			context[key] = val
+
+			let [clone, textContentAltered] = processChild(unloopedChild)
+			des.appendChild(clone)
+			if (!textContentAltered) {
+				processChildren(child, clone)
+			}
+
+			context[key] = _val
+		}
+
+		function isValidIdentifier(str) {
+			let t = { pos: 0, src: str, token: { type: null, value: null } }
+			let token = readToken(t)
+			if (token.type === 'identifier') {
+				token = readToken(t)
+				if (token.type === 'EOF') {
+					return true
+				}
+			}
+			return false
+		}
+
+		for (const child of src.childNodes) {
+			if (child.nodeType !== Node.ELEMENT_NODE) {
+				des.appendChild(child.cloneNode(true))
+				continue
+			}
+
+			let forExpr = child.getAttribute("hh-for")
+
+			if (forExpr) {
+				let contextVals = []
+				let key = undefined
+				let expr = undefined
+
+				let i = forExpr.indexOf(':')
+				// hh-for="expr" = no value added to context
+				// hh-for=":expr" = expr as key of context
+				// hh-for="key:expr" = key as key of context
+				if (i === -1) {
+					key = null
+					expr = forExpr
+				} else {
+					key = forExpr.slice(0, i).trim()
+					expr = forExpr.slice(i + 1).trim()
+				}
+
+				let range = expr.indexOf("..")
+
+				if (range === -1) {
+					if (isValidIdentifier(expr)) {
+						contextVals = data.getAll(expr)
+					} else {
+						err("Expression is not a valid identifer: " + expr)
+					}
+
+					if (key !== null) {
+						if (key === '') {
+							key = expr
+						} else {
+							if (!isValidIdentifier(key)) {
+								err("Key is not a valid identifer: " + key)
+							}
+						}
+					}
+				} else {
+					let hasErr = false
+
+					if (key !== null) {
+						if (key === '') {
+							err("Shadowing is not allowed inside a range expression '..'")
+							hasErr = true
+						} else {
+							if (!isValidIdentifier(key)) {
+								err("Key is not a valid identifer: " + key)
+							}
+						}
+					}
+
+					let start = evaluateExpression(expr.slice(0, range).trim())
+					if (start.error) {
+						err("Error when evaluating range start: " + start.error )
+						hasErr = true
+					} else {
+						if (start < 0) {
+							err("Evaluated range start is less than zero")
+							hasErr = true
+						}
+					}
+
+					let end = evaluateExpression(expr.slice(range + 2).trim())
+					if (end.error) {
+						err("Error when evaluating range end: " + end.error)
+						hasErr = true
+					} else {
+						if (end < 0) {
+							err("Evaluated range end is less than zero")
+							hasErr = true
+						}
+					}
+
+					if (!hasErr) {
+						if (start > end) {
+							while (start >= end) {
+								contextVals.push(String(start))
+								start -= 1
+							}
+						} else {
+							while (start <= end) {
+								contextVals.push(String(start))
+								start += 1
+							}
+						}
+					}
+				}
+
+				let unloopedChild = child.cloneNode(false)
+				unloopedChild.removeAttribute("hh-for")
+
+				let spacer = null
+				let prev = child.previousSibling
+				if (prev && prev.nodeType === Node.TEXT_NODE) {
+					let text = prev.textContent
+					let idx = text.length
+					while (idx) {
+						idx -= 1
+						if (text[idx] === '\n') {
+							break
+						}
+						if (text[idx].trim() !== '') {
+							idx += 1
+							break
+						}
+					}
+					let ws = text.slice(idx)
+					if (ws) {
+						spacer = new Text(ws)
+					}
+				}
+
+				// I know the flow is weird but putting if outside the loop is generally faster
+				// I will profile it later
+				let count = contextVals.length
+				if (key ===  null) {
+					let processedChild = undefined
+					let textContentAltered = undefined
+
+					if (count) {
+						[processedChild, textContentAltered] = processChild(unloopedChild)
+						if (textContentAltered) {
+							des.appendChild(processedChild.cloneNode(true))
+						} else {
+							let clone = des.appendChild(unloopedChild.cloneNode(false))
+							processChildren(child, clone)
+						}
+
+						count -= 1
+					}
+
+					if (spacer) {
+						while (count) {
+							des.appendChild(spacer.cloneNode(true))
+							if (textContentAltered) {
+								des.appendChild(processedChild.cloneNode(true))
+							} else {
+								let clone = des.appendChild(unloopedChild.cloneNode(false))
+								processChildren(child, clone)
+							}
+
+							count -= 1
+						}
+					}
+					else {
+						while (count) {
+							if (textContentAltered) {
+								des.appendChild(processedChild.cloneNode(true))
+							} else {
+								let clone = des.appendChild(unloopedChild.cloneNode(false))
+								processChildren(child, clone)
+							}
+
+							count -= 1
+						}
+					}
+				} else {
+					if (count) {
+						processContext(contextVals[contextVals.length - count], key, unloopedChild, child)
+						count -= 1
+					}
+
+					if (spacer) {
+						while (count) {
+							des.appendChild(spacer.cloneNode(true))
+							processContext(contextVals[contextVals.length - count], key, unloopedChild, child)
+							count -= 1
+						}
+					}
+					else {
+						while (count) {
+							processContext(contextVals[contextVals.length - count], key, unloopedChild, child)
+							count -= 1
+						}
+					}
+				}
+
+			} else {
+				let [clone, textContentAltered] = processChild(child)
+				des.appendChild(clone)
+				if (!textContentAltered) {
+					processChildren(child, clone)
+				}
+			}
 		}
 	}
 
-	t = (typeof t === "string" || t instanceof String)) ? document.querySelector(t) : t;
-
-	if (!(t instanceof HTMLTemplateElement)) {
-		console.error("hatchFromTemplate: " + t + " not found or not a <template>");
-		return false;
+	if (html instanceof HTMLElement) {
+		if (html instanceof HTMLTemplateElement) {
+			html = html.content
+		}
+	} else {
+		err(html + " is not a HTML element")
+		return [null, errors]
 	}
 
-	let hatchMap = {};
-	let src = t.content
-	let des = t.content.cloneNode(false)
-} 
+	let hatched = undefined
+	if (data) {
+		hatched = html.cloneNode(false)
+		processChildren(html, hatched)
+	} else {
+		hatched = html.cloneNode(true)
+	}
+	return [hatched, errors]
+}

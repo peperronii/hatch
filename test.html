@@ -1,0 +1,1205 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8">
+	<title> test hatch.html() </title>
+	<script src="hatch.js"></script>
+	<style>
+		body { font-family: system-ui, sans-serif; max-width: 800px; margin: 2rem auto; padding: 0 1rem; }
+		article { margin: 2rem 0; padding: 1rem; border: 1px solid #ccc; border-radius: 6px; }
+		article.pass { border-color: green; background: #f0fff0; }
+		article.fail { border-color: red; background: #fff0f0; }
+		h3 { margin: 0 0 0.5rem; }
+		.result-row { display: flex; gap: 1rem; margin-top: 0.5rem; }
+		.result-row > div { flex: 1; padding: 0.5rem; border: 1px dashed #999; border-radius: 4px; }
+		.result-row label { display: block; font-size: 0.8rem; color: #666; margin-bottom: 0.25rem; }
+		.verdict { font-weight: bold; margin-top: 0.5rem; }
+	</style>
+</head>
+<body>
+
+<h1>hatch.html() testing suite</h1>
+
+<!-- ============================================================ -->
+<!-- Test 1: Simple attribute rendering from form data            -->
+<!-- ============================================================ -->
+<article id="test1">
+	<h2>Test 1</h2>
+	<h3>Simple attribute rendering from form data</h3>
+	<form id="form1">
+		<input name="one" value="hello" readonly>
+	</form>
+	<template id="template1">
+		<input hh:value="one[0]" readonly>
+	</template>
+	<div id="result1"></div>
+	<div id="expect1">
+		<input value="hello" readonly>
+	</div>
+</article>
+
+<!-- ============================================================ -->
+<!-- Test 2: Simple textContent from form data                    -->
+<!-- ============================================================ -->
+<article id="test2">
+	<h2>Test 2</h2>
+	<h3>Simple textContent from form data (bare hh:)</h3>
+	<form id="form2">
+		<input name="title" value="Welcome">
+	</form>
+	<template id="template2">
+		<span hh:="title[0]"></span>
+	</template>
+	<div id="result2"></div>
+	<div id="expect2">
+		<span>Welcome</span>
+	</div>
+</article>
+
+<!-- ============================================================ -->
+<!-- Test 3: Multiple hh:* attributes on one element              -->
+<!-- ============================================================ -->
+<article id="test3">
+	<h2>Test 3</h2>
+	<h3>Multiple hh:* attributes on one element</h3>
+	<form id="form3">
+		<input name="kind" value="email">
+		<input name="hint" value="your email">
+		<input name="val" value="a@b.com">
+	</form>
+	<template id="template3">
+		<input hh:type="kind[0]" hh:placeholder="hint[0]" hh:value="val[0]">
+	</template>
+	<div id="result3"></div>
+	<div id="expect3">
+		<input type="email" placeholder="your email" value="a@b.com">
+	</div>
+</article>
+
+<!-- ============================================================ -->
+<!-- Test 4: FormData.length inside index expression               -->
+<!-- ============================================================ -->
+<article id="test4">
+	<h2>Test 4</h2>
+	<h3>FormData.length available inside [ ] expressions</h3>
+	<form id="form4">
+		<input name="items" value="apple">
+		<input name="items" value="banana">
+		<input name="items" value="cherry">
+	</form>
+	<template id="template4">
+		<li hh:="items[(items-1)]"></li>
+	</template>
+	<div id="result4"></div>
+	<div id="expect4">
+		<li>cherry</li>
+	</div>
+</article>
+
+<!-- ============================================================ -->
+<!-- Test 5: Array indexing with constant                         -->
+<!-- ============================================================ -->
+<article id="test5">
+	<h2>Test 5</h2>
+	<h3>Array indexing — id[constant]</h3>
+	<form id="form5">
+		<input name="items" value="apple">
+		<input name="items" value="banana">
+		<input name="items" value="cherry">
+	</form>
+	<template id="template5">
+		<li hh:="items[0]"></li>
+	</template>
+	<div id="result5"></div>
+	<div id="expect5">
+		<li>apple</li>
+	</div>
+</article>
+
+<!-- ============================================================ -->
+<!-- Test 6: Array indexing with expression                       -->
+<!-- ============================================================ -->
+<article id="test6">
+	<h2>Test 6</h2>
+	<h3>Array indexing — id[expression]</h3>
+	<form id="form6">
+		<input name="items" value="apple">
+		<input name="items" value="banana">
+		<input name="items" value="cherry">
+	</form>
+	<template id="template6">
+		<li hh:="items[2-1]"></li>
+	</template>
+	<div id="result6"></div>
+	<div id="expect6">
+		<li>banana</li>
+	</div>
+</article>
+
+<!-- ============================================================ -->
+<!-- Test 7: Array indexing with expression using FormData value  -->
+<!-- ============================================================ -->
+<article id="test7">
+	<h2>Test 7</h2>
+	<h3>Array indexing — expression reads from FormData via nested index</h3>
+	<form id="form7">
+		<input name="items" value="apple">
+		<input name="items" value="banana">
+		<input name="items" value="cherry">
+		<input name="idx" value="2">
+	</form>
+	<template id="template7">
+		<li hh:="items[(idx[0]-1)]"></li>
+	</template>
+	<div id="result7"></div>
+	<div id="expect7">
+		<li>banana</li>
+	</div>
+</article>
+
+<!-- ============================================================ -->
+<!-- Test 8: Elements without hh: pass through                    -->
+<!-- ============================================================ -->
+<article id="test8">
+	<h2>Test 8</h2>
+	<h3>Elements without hh: attributes pass through unchanged</h3>
+	<form id="form8">
+		<input name="x" value="ignored">
+	</form>
+	<template id="template8">
+		<div class="unchanged"><strong>static</strong> content</div>
+	</template>
+	<div id="result8"></div>
+	<div id="expect8">
+		<div class="unchanged"><strong>static</strong> content</div>
+	</div>
+</article>
+
+<!-- ============================================================ -->
+<!-- Test 9: Nested elements                                      -->
+<!-- ============================================================ -->
+<article id="test9">
+	<h2>Test 9</h2>
+	<h3>Nested elements with different FormData fields</h3>
+	<form id="form9">
+		<input name="title" value="Hello">
+		<input name="body" value="World">
+	</form>
+	<template id="template9">
+		<div>
+			<h1 hh:="title[0]"></h1>
+			<p hh:="body[0]"></p>
+		</div>
+	</template>
+	<div id="result9"></div>
+	<div id="expect9">
+		<div>
+			<h1>Hello</h1>
+			<p>World</p>
+		</div>
+	</div>
+</article>
+
+<!-- ============================================================ -->
+<!-- Test 10: hh-for loop (no key)                                -->
+<!-- ============================================================ -->
+<article id="test10">
+	<h2>Test 10</h2>
+	<h3>hh-for loop without key — iterates count times</h3>
+	<form id="form10">
+		<input name="colors" value="red">
+		<input name="colors" value="green">
+		<input name="colors" value="blue">
+	</form>
+	<template id="template10">
+		<ul>
+			<li hh-for="colors">...</li>
+		</ul>
+	</template>
+	<div id="result10"></div>
+	<div id="expect10">
+		<ul>
+			<li>...</li>
+			<li>...</li>
+			<li>...</li>
+		</ul>
+	</div>
+</article>
+
+<!-- ============================================================ -->
+<!-- Test 11: hh-for loop with key                                -->
+<!-- ============================================================ -->
+<article id="test11">
+	<h2>Test 11</h2>
+	<h3>hh-for loop with key — context value is a string</h3>
+	<form id="form11">
+		<input name="colors" value="red">
+		<input name="colors" value="green">
+		<input name="colors" value="blue">
+	</form>
+	<template id="template11">
+		<ul>
+			<li hh-for="c:colors" hh:="c"></li>
+		</ul>
+	</template>
+	<div id="result11"></div>
+	<div id="expect11">
+		<ul>
+			<li>red</li>
+			<li>green</li>
+			<li>blue</li>
+		</ul>
+	</div>
+</article>
+
+<!-- ============================================================ -->
+<!-- Test 12: hh-for range ascending                              -->
+<!-- ============================================================ -->
+<article id="test12">
+	<h2>Test 12</h2>
+	<h3>hh-for range ascending — context value is a number</h3>
+	<form id="form12">
+	</form>
+	<template id="template12">
+		<ul>
+			<li hh-for="n:0..3" hh:="n"></li>
+		</ul>
+	</template>
+	<div id="result12"></div>
+	<div id="expect12">
+		<ul>
+			<li>0</li>
+			<li>1</li>
+			<li>2</li>
+			<li>3</li>
+		</ul>
+	</div>
+</article>
+
+<!-- ============================================================ -->
+<!-- Test 13: hh-for range descending                             -->
+<!-- ============================================================ -->
+<article id="test13">
+	<h2>Test 13</h2>
+	<h3>hh-for range descending</h3>
+	<form id="form13">
+	</form>
+	<template id="template13">
+		<ul>
+			<li hh-for="n:5..2" hh:="n"></li>
+		</ul>
+	</template>
+	<div id="result13"></div>
+	<div id="expect13">
+		<ul>
+			<li>5</li>
+			<li>4</li>
+			<li>3</li>
+			<li>2</li>
+		</ul>
+	</div>
+</article>
+
+<!-- ============================================================ -->
+<!-- Test 14: hh-for range with arithmetic expressions            -->
+<!-- ============================================================ -->
+<article id="test14">
+	<h2>Test 14</h2>
+	<h3>hh-for range with arithmetic expressions</h3>
+	<form id="form14">
+	</form>
+	<template id="template14">
+		<ul>
+			<li hh-for="n:(1+1)..(2+2)" hh:="n"></li>
+		</ul>
+	</template>
+	<div id="result14"></div>
+	<div id="expect14">
+		<ul>
+			<li>2</li>
+			<li>3</li>
+			<li>4</li>
+		</ul>
+	</div>
+</article>
+
+<!-- ============================================================ -->
+<!-- Test 15: Nested hh-for loops                                 -->
+<!-- ============================================================ -->
+<article id="test15">
+	<h2>Test 15</h2>
+	<h3>Nested hh-for loops — context values are numbers</h3>
+	<form id="form15">
+	</form>
+	<template id="template15">
+		<div>
+			<div hh-for="i:0..1">
+				<span hh-for="j:0..1">
+					<em hh:="i" hh:title="j"></em>
+				</span>
+			</div>
+		</div>
+	</template>
+	<div id="result15"></div>
+	<div id="expect15">
+		<div>
+			<div>
+				<span><em title="0">0</em></span>
+				<span><em title="1">0</em></span>
+			</div>
+			<div>
+				<span><em title="0">1</em></span>
+				<span><em title="1">1</em></span>
+			</div>
+		</div>
+	</div>
+</article>
+
+<!-- ============================================================ -->
+<!-- Test 16: null data → deep clone                              -->
+<!-- ============================================================ -->
+<article id="test16">
+	<h2>Test 16</h2>
+	<h3>Null data returns a deep clone</h3>
+	<template id="template16">
+		<p>Just a <strong>static</strong> clone</p>
+	</template>
+	<div id="result16"></div>
+	<div id="expect16">
+		<p>Just a <strong>static</strong> clone</p>
+	</div>
+</article>
+
+<!-- ============================================================ -->
+<!-- Test 17: Empty loop                                          -->
+<!-- ============================================================ -->
+<article id="test17">
+	<h2>Test 17</h2>
+	<h3>hh-for over a missing FormData field — no iterations</h3>
+	<form id="form17">
+	</form>
+	<template id="template17">
+		<ul>
+			<li hh-for="nothing">should not appear</li>
+		</ul>
+	</template>
+	<div id="result17"></div>
+	<div id="expect17">
+		<ul></ul>
+	</div>
+</article>
+
+<!-- ============================================================ -->
+<!-- Test 18: Context value overrides FormData lookup             -->
+<!-- ============================================================ -->
+<article id="test18">
+	<h2>Test 18</h2>
+	<h3>Context value used when it exists, FormData ignored</h3>
+	<form id="form18">
+		<input name="ctxId" value="from-formdata">
+	</form>
+	<template id="template18">
+		<span hh:id="ctxId"></span>
+	</template>
+	<div id="result18"></div>
+	<div id="expect18">
+		<span id="from-context"></span>
+	</div>
+</article>
+
+<!-- ============================================================ -->
+<!-- Test 19: hh-for context → array index (combined)             -->
+<!-- ============================================================ -->
+<article id="test19">
+	<h2>Test 19</h2>
+	<h3>hh-for context strings used as array indices</h3>
+	<form id="form19">
+		<input name="indices" value="0">
+		<input name="indices" value="2">
+		<input name="items" value="zero">
+		<input name="items" value="one">
+		<input name="items" value="two">
+	</form>
+	<template id="template19">
+		<ul>
+			<li hh-for="i:indices" hh:="items[i]"></li>
+		</ul>
+	</template>
+	<div id="result19"></div>
+	<div id="expect19">
+		<ul>
+			<li>zero</li>
+			<li>two</li>
+		</ul>
+	</div>
+</article>
+
+<!-- ============================================================ -->
+<!-- Test 20: &lt;template&gt; element support                        -->
+<!-- ============================================================ -->
+<article id="test20">
+	<h2>Test 20</h2>
+	<h3>HTMLTemplateElement — .content is used automatically</h3>
+	<template id="template20">
+		<div>template content works</div>
+	</template>
+	<div id="result20"></div>
+	<div id="expect20">
+		<div>template content works</div>
+	</div>
+</article>
+
+<!-- ============================================================ -->
+<!-- Test 21: Data shadows Context via [0]                        -->
+<!-- ============================================================ -->
+<article id="test21">
+	<h2>Test 21</h2>
+	<h3>Data shadows Context — [0] picks FormData over context</h3>
+	<form id="form21">
+		<input name="name" value="from-formdata">
+	</form>
+	<template id="template21">
+		<span hh:="name[0]"></span>
+	</template>
+	<div id="result21"></div>
+	<div id="expect21">
+		<span>from-formdata</span>
+	</div>
+</article>
+
+<!-- ============================================================ -->
+<!-- Test 22: Context shadows Context (nested hh-for)             -->
+<!-- ============================================================ -->
+<article id="test22">
+	<h2>Test 22</h2>
+	<h3>Context shadows Context — inner hh-for overwrites outer context</h3>
+	<form id="form22">
+	</form>
+	<template id="template22">
+		<ul>
+			<li hh-for="i:0..1">
+				<span hh-for="i:10..11" hh:="i"></span>
+			</li>
+		</ul>
+	</template>
+	<div id="result22"></div>
+	<div id="expect22">
+		<ul>
+			<li><span>10</span><span>11</span></li>
+			<li><span>10</span><span>11</span></li>
+		</ul>
+	</div>
+</article>
+
+<!-- ============================================================ -->
+<!-- Test 23: Comprehensive — all non-error features              -->
+<!-- ============================================================ -->
+<article id="test23">
+	<h2>Test 23</h2>
+	<h3>Comprehensive — every hatch.html feature in one template</h3>
+	<form id="form23">
+		<input name="name" value="Alice">
+		<input name="url" value="https://example.com">
+		<input name="items" value="apple">
+		<input name="items" value="banana">
+		<input name="items" value="cherry">
+		<input name="colors" value="red">
+		<input name="colors" value="green">
+		<input name="colors" value="blue">
+		<input name="indices" value="1">
+		<input name="indices" value="2">
+	</form>
+	<template id="template23">
+		<div>
+			<h1 hh:="name[0]">fallback</h1>
+			<a hh:href="url[0]">link</a>
+			<p hh:="items[(items-1)]">last</p>
+			<span hh:="items[(indices[0])]">idx</span>
+			<ul>
+				<li hh-for="colors">.</li>
+			</ul>
+			<ol>
+				<li hh-for="c:colors" hh:="c">.</li>
+			</ol>
+			<div>
+				<span hh-for="n:0..2" hh:="n">0</span>
+			</div>
+			<div>
+				<span hh-for="n:3..1" hh:="n">0</span>
+			</div>
+			<div>
+				<span hh-for="n:(1+1)..(2+2)" hh:="n">0</span>
+			</div>
+			<div>
+				<span hh-for="i:0..1">
+					<em hh-for="j:0..1" hh:title="j" hh:="i">.</em>
+				</span>
+			</div>
+			<div>
+				<span hh-for="k:0..0">
+					<b hh-for="k:5..5" hh:="k">0</b>
+				</span>
+			</div>
+			<div>
+				<span hh-for="name:colors">
+					<em hh:="name">ctx</em>
+					<b hh:="name[0]">data</b>
+				</span>
+			</div>
+			<footer>static</footer>
+		</div>
+	</template>
+	<div id="result23"></div>
+	<div id="expect23">
+		<div>
+			<h1>Alice</h1>
+			<a href="https://example.com">link</a>
+			<p>cherry</p>
+			<span>banana</span>
+			<ul>
+				<li>.</li>
+				<li>.</li>
+				<li>.</li>
+			</ul>
+			<ol>
+				<li>red</li>
+				<li>green</li>
+				<li>blue</li>
+			</ol>
+			<div>
+				<span>0</span>
+				<span>1</span>
+				<span>2</span>
+			</div>
+			<div>
+				<span>3</span>
+				<span>2</span>
+				<span>1</span>
+			</div>
+			<div>
+				<span>2</span>
+				<span>3</span>
+				<span>4</span>
+			</div>
+			<div>
+				<span>
+					<em title="0">0</em>
+					<em title="1">0</em>
+				</span>
+				<span>
+					<em title="0">1</em>
+					<em title="1">1</em>
+				</span>
+			</div>
+			<div>
+				<span>
+					<b>5</b>
+				</span>
+			</div>
+			<div>
+				<span>
+					<em>red</em>
+					<b>Alice</b>
+				</span>
+				<span>
+					<em>green</em>
+					<b>Alice</b>
+				</span>
+				<span>
+					<em>blue</em>
+					<b>Alice</b>
+				</span>
+			</div>
+			<footer>static</footer>
+		</div>
+	</div>
+</article>
+
+<!-- ============================================================ -->
+<!-- Test runner                                                  -->
+<!-- ============================================================ -->
+<script>
+	function compareNodes(a, b) {
+		if (a.nodeType !== b.nodeType) return false;
+		if (a.nodeType === Node.TEXT_NODE) {
+			return a.textContent === b.textContent;
+		}
+		if (a.nodeType === Node.ELEMENT_NODE) {
+			if (a.tagName !== b.tagName) return false;
+			if (a.attributes.length !== b.attributes.length) return false;
+			for (let i = 0; i < a.attributes.length; i++) {
+				const name = a.attributes[i].name;
+				if (a.getAttribute(name) !== b.getAttribute(name)) return false;
+			}
+			const aKids = [...a.childNodes].filter(n =>
+				!(n.nodeType === Node.TEXT_NODE && !n.textContent.trim())
+			);
+			const bKids = [...b.childNodes].filter(n =>
+				!(n.nodeType === Node.TEXT_NODE && !n.textContent.trim())
+			);
+			if (aKids.length !== bKids.length) return false;
+			for (let i = 0; i < aKids.length; i++) {
+				if (!compareNodes(aKids[i], bKids[i])) return false;
+			}
+			return true;
+		}
+		return false;
+	}
+
+	const contextMap = {
+		test18: { ctxId: 'from-context' },
+		test21: { name: 'from-context' },
+	};
+
+	let passed = 0;
+	let failed = 0;
+
+	for (let i = 1; i <= 23; i++) {
+		const article = document.getElementById('test' + i);
+		if (!article) continue;
+
+		const form = article.querySelector('form');
+		const template = article.querySelector('template');
+		const result = article.querySelector('[id^="result"]');
+		const expect = article.querySelector('[id^="expect"]');
+
+		if (!template || !result || !expect) continue;
+
+		const formData = form ? new FormData(form) : null;
+		const context = contextMap['test' + i] || {};
+
+		const [output] = hatch.html(template, formData, context);
+		result.innerHTML = '';
+		if (output) result.appendChild(output);
+
+		const a = result.firstElementChild;
+		const b = expect.firstElementChild;
+		const match = a && b && compareNodes(a, b);
+
+		if (match) {
+			article.classList.add('pass');
+			passed++;
+		} else {
+			article.classList.add('fail');
+			const verdict = document.createElement('div');
+			verdict.className = 'verdict';
+			verdict.style.color = 'red';
+			verdict.textContent = 'FAIL — DOM mismatch (see result vs expected above)';
+			article.appendChild(verdict);
+			failed++;
+		}
+	}
+
+	const summary = document.createElement('div');
+	summary.style.cssText = 'margin-top:2rem; padding:1rem; font-size:1.2rem; font-weight:bold;';
+	summary.textContent = passed + '/' + (passed + failed) + ' passing' +
+		(failed > 0 ? ' — ' + failed + ' FAILED' : ' — all passing!');
+	summary.style.color = failed === 0 ? 'green' : 'red';
+	document.body.appendChild(summary);
+</script>
+
+<!-- ============================================================ -->
+<!-- hatch() testing suite                                        -->
+<!-- ============================================================ -->
+<h1>hatch() testing suite</h1>
+
+<script>
+	let loaderCalled = false;
+	function handleLoaderCall() { loaderCalled = true; }
+
+	let fetchError = null;
+	function handleFetchError(e) { fetchError = e; }
+
+	let abortError = false;
+	function handleAbortError(e) { if (e.name === 'AbortError') abortError = true; }
+
+	let timeoutAborted = false;
+	function handleTimeoutAbort(e) { if (e.name === 'AbortError') timeoutAborted = true; }
+
+	let finished = false;
+	function handleFinish() { finished = true; }
+
+	let methodError = null;
+	function handleMethodError(e) { methodError = e; }
+</script>
+
+<article id="ht-basic">
+	<h2>Hatch Test 1</h2>
+	<h3>Basic GET swap — response replaces target element</h3>
+	<form id="hf-basic" action="/test/basic" target="#ht-basic-des"
+		onsubmit="return hatch(event, {timeout:0})">
+		<input name="q" value="hello">
+	</form>
+	<div id="ht-basic-des">original</div>
+</article>
+
+<article id="ht-debounce">
+	<h2>Hatch Test 2</h2>
+	<h3>Debounce — 3 rapid calls produce only 1 fetch</h3>
+	<form id="hf-debounce" action="/test/debounce"
+		onsubmit="return hatch(event, {debounce:100, timeout:0})">
+		<input name="q" value="test">
+	</form>
+</article>
+
+<article id="ht-abort">
+	<h2>Hatch Test 3</h2>
+	<h3>In-flight abort — second call aborts slow first request</h3>
+	<form id="hf-abort" target="#ht-abort-des"
+		onsubmit="return hatch(event, {timeout:0})">
+		<input name="q" value="a">
+	</form>
+	<div id="ht-abort-des">original</div>
+</article>
+
+<article id="ht-post">
+	<h2>Hatch Test 4</h2>
+	<h3>POST method — sent to fetch with body, not query string</h3>
+	<form id="hf-post" action="/test/post" method="POST" target="#ht-post-des"
+		onsubmit="return hatch(event, {timeout:0})">
+		<input name="q" value="world">
+	</form>
+	<div id="ht-post-des">original</div>
+</article>
+
+<article id="ht-oob">
+	<h2>Hatch Test 5</h2>
+	<h3>OOB swaps — response children with ids replace DOM matches</h3>
+	<form id="hf-oob" action="/test/oob" target="#ht-oob-b"
+		onsubmit="return hatch(event, {timeout:0})">
+		<input name="q" value="1">
+	</form>
+	<div id="ht-oob-a">old A</div>
+	<div id="ht-oob-b">old B</div>
+</article>
+
+<article id="ht-oob-skip">
+	<h2>Hatch Test 6</h2>
+	<h3>OOB skip target — target element not individually swapped</h3>
+	<form id="hf-oob-skip" action="/test/oob-skip" target="#ht-oob-skip-y"
+		onsubmit="return hatch(event, {timeout:0})">
+		<input name="q" value="1">
+	</form>
+	<div id="ht-oob-skip-x">old X</div>
+	<div id="ht-oob-skip-y">old Y</div>
+</article>
+
+<article id="ht-empty">
+	<h2>Hatch Test 7</h2>
+	<h3>Empty response — target element removed</h3>
+	<form id="hf-empty" action="/test/empty" target="#ht-empty-des"
+		onsubmit="return hatch(event, {timeout:0})">
+		<input name="q" value="1">
+	</form>
+	<div id="ht-empty-des">should disappear</div>
+</article>
+
+<article id="ht-loader">
+	<h2>Hatch Test 8</h2>
+	<h3>Loader — cfg.onLoad is called before fetch</h3>
+	<form id="hf-loader" action="/test/loader"
+		onsubmit="return hatch(event, {timeout:0, onLoad: handleLoaderCall})">
+		<input name="q" value="1">
+	</form>
+</article>
+
+<article id="ht-err-fetch">
+	<h2>Hatch Test 9</h2>
+	<h3>Fetch error — cfg.onError receives network failure</h3>
+	<form id="hf-err-fetch" action="/test/error" target="#ht-err-fetch-des"
+		onsubmit="return hatch(event, {timeout:0, onError: handleFetchError})">
+		<input name="q" value="1">
+	</form>
+	<div id="ht-err-fetch-des">original</div>
+</article>
+
+<article id="ht-err-abort">
+	<h2>Hatch Test 10</h2>
+	<h3>Abort error — cfg.onError receives AbortError</h3>
+	<form id="hf-err-abort" target="#ht-err-abort-des"
+		onsubmit="return hatch(event, {timeout:0, onError: handleAbortError})">
+		<input name="q" value="1">
+	</form>
+	<div id="ht-err-abort-des">original</div>
+</article>
+
+<article id="ht-timeout">
+	<h2>Hatch Test 11</h2>
+	<h3>Timeout — fetch aborted after timeout, element untouched</h3>
+	<form id="hf-timeout" action="/test/timeout" target="#ht-timeout-des"
+		onsubmit="return hatch(event, {timeout:80, onError: handleTimeoutAbort})">
+		<input name="q" value="1">
+	</form>
+	<div id="ht-timeout-des">original</div>
+</article>
+
+<article id="ht-ctrl">
+	<h2>Hatch Test 12</h2>
+	<h3>Controls — form._hatchAbort, _hatchTimeout, _hatchDebounce set</h3>
+	<form id="hf-ctrl" action="/test/ctrl" target="#ht-ctrl-des"
+		onsubmit="return hatch(event, {timeout:50})">
+		<input name="q" value="1">
+	</form>
+	<div id="ht-ctrl-des">original</div>
+</article>
+
+<article id="ht-finish">
+	<h2>Hatch Test 13</h2>
+	<h3>onFinish — cfg.onFinish fires after DOM update</h3>
+	<form id="hf-finish" action="/test/onfinish" target="#ht-finish-des"
+		onsubmit="return hatch(event, {timeout:0, onFinish: handleFinish})">
+		<input name="q" value="1">
+	</form>
+	<div id="ht-finish-des">original</div>
+</article>
+
+<article id="ht-form-post">
+	<h2>Hatch Test 14</h2>
+	<h3>Form POST — form method=POST sends body</h3>
+	<form id="hf-form-post" action="/test/form-post" method="POST" target="#ht-form-post-des"
+		onsubmit="return hatch(event, {timeout:0})">
+		<input name="q" value="world">
+	</form>
+	<div id="ht-form-post-des">original</div>
+</article>
+
+<article id="ht-validation">
+	<h2>Hatch Test 15</h2>
+	<h3>Form validation — invalid form blocks the request</h3>
+	<form id="hf-validation" action="/test/basic" target="#ht-validation-des"
+		onsubmit="return hatch(event, {timeout:0})">
+		<input name="x" required value="">
+	</form>
+	<div id="ht-validation-des">original</div>
+</article>
+
+<article id="ht-method">
+	<h2>Hatch Test 16</h2>
+	<h3>Invalid method — cfg.onError called, no fetch</h3>
+	<form id="hf-method" action="/test/basic" method="OPTIONS"
+		onsubmit="return hatch(event, {onError: handleMethodError})">
+		<input name="q" value="1">
+	</form>
+</article>
+
+<article id="ht-hash-action">
+	<h2>Hatch Test 17</h2>
+	<h3># action — triggers hatch.html() template rendering</h3>
+	<form id="hf-hash-action" action="#ht-template" target="#ht-hash-des"
+		onsubmit="return hatch(event, {timeout:0})">
+		<input name="one" value="rendered">
+	</form>
+	<template id="ht-template">
+		<div id="ht-hash-des">
+			<span hh:="one[0]"></span>
+		</div>
+	</template>
+	<div id="ht-hash-des"></div>
+</article>
+
+<!-- ============================================================ -->
+<!-- hatch() test runner                                          -->
+<!-- ============================================================ -->
+<script>
+(function () {
+	const fetchCalls = [];
+
+	function delayedText(html, delay, signal) {
+		return new Promise(function (resolve, reject) {
+			if (signal && signal.aborted) return reject(new DOMException('Aborted', 'AbortError'));
+			let onAbort = () => reject(new DOMException('Aborted', 'AbortError'));
+			if (signal) signal.addEventListener('abort', onAbort);
+			setTimeout(() => {
+				if (signal) signal.removeEventListener('abort', onAbort);
+				resolve(makeResponse(html));
+			}, delay);
+		});
+	}
+
+	const routes = {};
+	routes['/test/basic']       = '<div id="ht-basic-des">replaced</div>';
+	routes['/test/debounce']    = '<span>debounced</span>';
+	routes['/test/abort-1']     = '!delay:300:<div id="ht-abort-des">first</div>';
+	routes['/test/abort-2']     = '<div id="ht-abort-des">second</div>';
+	routes['/test/post']        = '<div id="ht-post-des">posted</div>';
+	routes['/test/oob']         = '<div id="ht-oob-a">A</div><div id="ht-oob-b">B</div>';
+	routes['/test/oob-skip']    = '<div id="ht-oob-skip-x">X</div><div id="ht-oob-skip-y">Y</div>';
+	routes['/test/empty']       = '<!DOCTYPE html><html><head></head><body></body></html>';
+	routes['/test/loader']      = '!delay:80:<div>loaded</div>';
+	routes['/test/error']       = '!error';
+	routes['/test/timeout']     = '!delay:400:<div id="ht-timeout-des">SHOULD NOT SHOW</div>';
+	routes['/test/ctrl']        = '<div id="ht-ctrl-des">ok</div>';
+	routes['/test/onfinish']    = '<div id="ht-finish-des">done</div>';
+	routes['/test/form-post']   = '<div id="ht-form-post-des">posted</div>';
+
+	window.fetch = function (url, init) {
+		let full = typeof url === 'string' ? url : url.url;
+		let s = new URL(full, location.href).pathname;
+		let method = init && init.method ? init.method : 'GET';
+		let signal = init && init.signal ? init.signal : null;
+		fetchCalls.push({ url: s, full: full, method, signal });
+
+		if (signal && signal.aborted) {
+			return Promise.reject(new DOMException('The operation was aborted', 'AbortError'));
+		}
+
+		let resp = routes[s];
+		if (!resp) return makeResponse('');
+
+		if (resp === '!error') return Promise.reject(new Error('network failure'));
+
+		let m = resp.match(/^!delay:(\d+):(.+)$/s);
+		if (m) return delayedText(m[2], parseInt(m[1]), signal);
+
+		return makeResponse(resp);
+	};
+
+	function makeResponse(html) {
+		let hh = null;
+		let m = html.match(/^!hh:([^:]+):(.+)$/s);
+		if (m) { hh = m[1]; html = m[2]; }
+		let headers = new Headers();
+		if (hh) headers.set('hh-data', hh);
+		return Promise.resolve({ headers, text: () => Promise.resolve(html) });
+	}
+
+	function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+	async function runHatchTests() {
+		let hPassed = 0, hFailed = 0;
+
+		function assert(article, condition, label) {
+			if (condition) {
+				article.classList.add('pass');
+				hPassed++;
+			} else {
+				article.classList.add('fail');
+				let v = document.createElement('div');
+				v.className = 'verdict';
+				v.style.color = 'red';
+				v.textContent = 'FAIL — ' + label;
+				article.appendChild(v);
+				hFailed++;
+			}
+		}
+
+		// Test 1: Basic GET swap
+		{
+			let a = document.getElementById('ht-basic');
+			document.getElementById('hf-basic').requestSubmit();
+			await sleep(50);
+			let el = document.getElementById('ht-basic-des');
+			assert(a, el && el.textContent === 'replaced', 'expected "replaced", got "' + (el ? el.textContent : 'null') + '"');
+			if (el) el.textContent = 'original';
+		}
+
+		// Test 2: Debounce
+		{
+			let a = document.getElementById('ht-debounce');
+			fetchCalls.length = 0;
+			let form = document.getElementById('hf-debounce');
+			form.requestSubmit();
+			form.requestSubmit();
+			form.requestSubmit();
+			await sleep(250);
+			let n = fetchCalls.filter(c => c.url === '/test/debounce').length;
+			assert(a, n === 1, n + ' calls (expected 1)');
+		}
+
+		// Test 3: In-flight abort
+		{
+			let a = document.getElementById('ht-abort');
+			let form = document.getElementById('hf-abort');
+			form.setAttribute('action', '/test/abort-1');
+			form.requestSubmit();
+			await sleep(60);
+			form.setAttribute('action', '/test/abort-2');
+			form.requestSubmit();
+			await sleep(400);
+			let el = document.getElementById('ht-abort-des');
+			assert(a, el && el.textContent === 'second', 'got "' + (el ? el.textContent : 'null') + '" expected "second"');
+			if (el) el.textContent = 'original';
+		}
+
+		// Test 4: POST method
+		{
+			let a = document.getElementById('ht-post');
+			fetchCalls.length = 0;
+			document.getElementById('hf-post').requestSubmit();
+			await sleep(50);
+			let calls = fetchCalls.filter(c => c.url === '/test/post');
+			let last = calls[calls.length - 1];
+			assert(a, last && last.method === 'POST', 'method: ' + (last ? last.method : 'no fetch'));
+			let el = document.getElementById('ht-post-des'); if (el) el.textContent = 'original';
+		}
+
+		// Test 5: OOB swaps
+		{
+			let a = document.getElementById('ht-oob');
+			document.getElementById('hf-oob').requestSubmit();
+			await sleep(50);
+			let aEl = document.getElementById('ht-oob-a');
+			let bEl = document.getElementById('ht-oob-b');
+			assert(a, aEl && aEl.textContent === 'A' && bEl && bEl.textContent === 'B',
+				'a:"' + (aEl ? aEl.textContent : 'null') + '" b:"' + (bEl ? bEl.textContent : 'null') + '"');
+			if (aEl) aEl.textContent = 'old A';
+			if (bEl) bEl.textContent = 'old B';
+		}
+
+		// Test 6: OOB skip target
+		{
+			let a = document.getElementById('ht-oob-skip');
+			document.getElementById('hf-oob-skip').requestSubmit();
+			await sleep(50);
+			let x = document.getElementById('ht-oob-skip-x');
+			let y = document.getElementById('ht-oob-skip-y');
+			assert(a, x && x.textContent === 'X' && y && y.textContent === 'Y',
+				'x:"' + (x ? x.textContent : 'null') + '" y:"' + (y ? y.textContent : 'null') + '"');
+			if (x) x.textContent = 'old X';
+			if (y) y.textContent = 'old Y';
+		}
+
+		// Test 7: Empty response
+		{
+			let a = document.getElementById('ht-empty');
+			document.getElementById('hf-empty').requestSubmit();
+			await sleep(50);
+			let el = document.getElementById('ht-empty-des');
+			assert(a, !el, 'element should have been removed');
+			if (!el) {
+				let d = document.createElement('div');
+				d.id = 'ht-empty-des';
+				d.textContent = 'should disappear';
+				a.appendChild(d);
+			}
+		}
+
+		// Test 8: Loader
+		{
+			let a = document.getElementById('ht-loader');
+			loaderCalled = false;
+			document.getElementById('hf-loader').requestSubmit();
+			assert(a, loaderCalled, 'onLoad should have been called');
+		}
+
+		// Test 9: Fetch error
+		{
+			let a = document.getElementById('ht-err-fetch');
+			fetchError = null;
+			document.getElementById('hf-err-fetch').requestSubmit();
+			await sleep(50);
+			assert(a, fetchError && fetchError.message === 'network failure',
+				'err: ' + (fetchError ? fetchError.message : 'null'));
+		}
+
+		// Test 10: Abort error
+		{
+			let a = document.getElementById('ht-err-abort');
+			abortError = false;
+			let form = document.getElementById('hf-err-abort');
+			form.setAttribute('action', '/test/abort-1');
+			form.requestSubmit();
+			await sleep(60);
+			form.setAttribute('action', '/test/abort-2');
+			form.requestSubmit();
+			await sleep(400);
+			assert(a, abortError, 'AbortError not received');
+			let el = document.getElementById('ht-err-abort-des'); if (el) el.textContent = 'original';
+		}
+
+		// Test 11: Timeout
+		{
+			let a = document.getElementById('ht-timeout');
+			timeoutAborted = false;
+			document.getElementById('hf-timeout').requestSubmit();
+			await sleep(200);
+			let el = document.getElementById('ht-timeout-des');
+			assert(a, el && el.textContent === 'original' && timeoutAborted,
+				'got "' + (el ? el.textContent : 'null') + '" abort:' + timeoutAborted);
+		}
+
+		// Test 12: Controls stored
+		{
+			let a = document.getElementById('ht-ctrl');
+			let form = document.getElementById('hf-ctrl');
+			form.requestSubmit();
+			let ok = form._hatchAbort instanceof AbortController
+				&& typeof form._hatchDebounce === 'number'
+				&& typeof form._hatchTimeout === 'number';
+			await sleep(80);
+			assert(a, ok, 'missing _hatchAbort/_hatchTimeout/_hatchDebounce');
+			let el = document.getElementById('ht-ctrl-des'); if (el) el.textContent = 'original';
+		}
+
+		// Test 13: onFinish
+		{
+			let a = document.getElementById('ht-finish');
+			finished = false;
+			document.getElementById('hf-finish').requestSubmit();
+			await sleep(50);
+			let el = document.getElementById('ht-finish-des');
+			assert(a, el && el.textContent === 'done' && finished,
+				'got "' + (el ? el.textContent : 'null') + '" finished:' + finished);
+			if (el) el.textContent = 'original';
+		}
+
+		// Test 14: Form POST
+		{
+			let a = document.getElementById('ht-form-post');
+			fetchCalls.length = 0;
+			document.getElementById('hf-form-post').requestSubmit();
+			await sleep(50);
+			let calls = fetchCalls.filter(c => c.url === '/test/form-post');
+			let last = calls[calls.length - 1];
+			assert(a, last && last.method === 'POST', 'method: ' + (last ? last.method : 'no fetch'));
+			let el = document.getElementById('ht-form-post-des'); if (el) el.textContent = 'original';
+		}
+
+		// Test 15: Form validation
+		{
+			let a = document.getElementById('ht-validation');
+			fetchCalls.length = 0;
+			document.getElementById('hf-validation').requestSubmit();
+			await sleep(20);
+			let calls = fetchCalls.filter(c => c.url === '/test/basic');
+			assert(a, calls.length === 0, 'fetch should not be called, got ' + calls.length + ' calls');
+			let el = document.getElementById('ht-validation-des'); if (el) el.textContent = 'original';
+		}
+
+		// Test 16: Invalid method
+		{
+			let a = document.getElementById('ht-method');
+			methodError = null;
+			document.getElementById('hf-method').requestSubmit();
+			assert(a, methodError && methodError.message.indexOf('Invalid method') === 0,
+				'err: ' + (methodError ? methodError.message : 'null'));
+		}
+
+		// Test 17: # action template rendering
+		{
+			let a = document.getElementById('ht-hash-action');
+			document.getElementById('hf-hash-action').requestSubmit();
+			await sleep(50);
+			let el = document.getElementById('ht-hash-des');
+			let span = el && el.querySelector('span');
+			assert(a, span && span.textContent === 'rendered',
+				'got "' + (span ? span.textContent : 'null') + '" expected "rendered"');
+			if (el) el.innerHTML = '';
+		}
+
+		// Summary
+		let total = hPassed + hFailed;
+		let s = document.createElement('div');
+		s.style.cssText = 'margin-top:2rem; padding:1rem; font-size:1.2rem; font-weight:bold;';
+		s.textContent = hPassed + '/' + total + ' hatch() tests passing' +
+			(hFailed > 0 ? ' — ' + hFailed + ' FAILED' : ' — all passing!');
+		s.style.color = hFailed === 0 ? 'green' : 'red';
+		document.body.appendChild(s);
+	}
+
+	runHatchTests();
+})();
+</script>
+
+</body>
+</html>
