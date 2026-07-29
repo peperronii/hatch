@@ -26,7 +26,7 @@ it uses form data as its input
 by having this we can now glue the use of form and template together
 this:
 
-```
+```html
 <form onsubmit="return hatch(event)" action="#mytemplate" target="#myslot">
 	<input name="message" value="hello world!"/>
 </form>
@@ -40,7 +40,7 @@ this:
 
 results in
 
-```
+```html
 <form onsubmit="return hatch(event)" action="#mytemplate" target="#myslot">
 	<input name="message" value="hello world!"/>
 </form>
@@ -53,11 +53,11 @@ results in
 ```
 
 the way of calling hatch is subject to change, it might convert to
-```
+```html
 <form hh-hatch action="#mytemplate" target="#myslot">
 ```
 or with config
-```
+```html
 <form hh-hatch="debounce = 200, timeout = 0"  action="#mytemplate" target="#myslot">
 ```
 but right now it is what it is
