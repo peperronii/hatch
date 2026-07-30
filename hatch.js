@@ -1,14 +1,35 @@
 function hatch(e, cfg) {	
 
 	function swap(doc, target) {
+
+		let currentTarget = null
+
 		for (const el of [...doc.children]) {
+			if (!(el instanceof HTMLElement)) {
+				continue
+			}
+
 			let id = el.getAttribute('hh-id') || el.id;
 			el.removeAttribute('hh-id');
+
 			if ( '#' + id === target) continue
-			document.getElementById(id)?.replaceWith(el)
+
+			currentTarget = document.getElementById(id)
+			if (currentTarget) {
+				currentTarget.replaceWith(el)
+			} else {
+				console.log("hatch | swap | out of band target not found : " + id)
+			}
+
 		}
-		if (target && target !== '') {
-		    document.querySelector(target)?.replaceWith(...doc.children)
+
+		if (target !== '') {
+			currentTarget = document.querySelector(target)
+			if (currentTarget) {
+				currentTarget.replaceWith(...doc.children)
+			} else {
+				console.warn("hatch | swap | main target not found : " + target)
+			}
 		}
 	}
 
@@ -473,14 +494,18 @@ hatch.html = function (html, data, context = {}) {
 
 				val = data.getAll(id)
 
-				val = val[idx]
-				if (val === undefined) {
-					errAttr(attr, "Form data: " + id + " index out of range: " + idx)
+				if (val.length !== 0) {
+					val = val[idx]
+					if (val === undefined) {
+						errAttr(attr, "Form data: " + id + " index out of range: " + idx)
+						continue
+					}
+				} else {
+					warnAttr(attr, "Form data: " + id + " not present")
 					continue
 				}
 
 			} else if (token.type === 'EOF') {
-
 				val = context[id]
 				if (val === undefined) {
 					val = data.getAll(id).length
@@ -733,7 +758,7 @@ hatch.html = function (html, data, context = {}) {
 	}
 
 	let hatched = undefined
-	if (data) {
+	if (data instanceof FormData) {
 		hatched = html.cloneNode(false)
 		processChildren(html, hatched)
 	} else {
