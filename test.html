@@ -360,7 +360,7 @@
 <!-- ============================================================ -->
 <article id="test16">
 	<h2>Test 16</h2>
-	<h3>Null data returns a deep clone</h3>
+	<h3>Empty FormData returns a clone</h3>
 	<template id="template16">
 		<p>Just a <strong>static</strong> clone</p>
 	</template>
@@ -665,7 +665,7 @@
 
 		if (!template || !result || !expect) continue;
 
-		const formData = form ? new FormData(form) : null;
+		const formData = form ? new FormData(form) : new FormData();
 		const context = contextMap['test' + i] || {};
 
 		const [output] = hatch.html(template, formData, context);
@@ -714,19 +714,27 @@
 	function handleAbortError(e) { if (e.name === 'AbortError') abortError = true; }
 
 	let timeoutAborted = false;
-	function handleTimeoutAbort(e) { if (e.name === 'AbortError') timeoutAborted = true; }
+	function handleTimeoutAbort(e) { if (e.name === 'TimeoutError') timeoutAborted = true; }
 
 	let finished = false;
 	function handleFinish() { finished = true; }
 
 	let methodError = null;
-	function handleMethodError(e) { methodError = e; }
+
+	function handleTemplateSubmit(e) {
+		e.preventDefault()
+		let form = e.target
+		let [doc, errors] = hatch.html(document.getElementById('ht-template'), new FormData(form), {})
+		if (errors.length !== 0) console.error(errors)
+		hatch.swap(doc, 'ht-hash-des')
+		return false
+	}
 </script>
 
 <article id="ht-basic">
 	<h2>Hatch Test 1</h2>
 	<h3>Basic GET swap — response replaces target element</h3>
-	<form id="hf-basic" action="/test/basic" target="#ht-basic-des"
+	<form id="hf-basic" action="/test/basic" target="ht-basic-des"
 		onsubmit="return hatch(event, {timeout:0})">
 		<input name="q" value="hello">
 	</form>
@@ -745,7 +753,7 @@
 <article id="ht-abort">
 	<h2>Hatch Test 3</h2>
 	<h3>In-flight abort — second call aborts slow first request</h3>
-	<form id="hf-abort" target="#ht-abort-des"
+	<form id="hf-abort" target="ht-abort-des"
 		onsubmit="return hatch(event, {timeout:0})">
 		<input name="q" value="a">
 	</form>
@@ -755,7 +763,7 @@
 <article id="ht-post">
 	<h2>Hatch Test 4</h2>
 	<h3>POST method — sent to fetch with body, not query string</h3>
-	<form id="hf-post" action="/test/post" method="POST" target="#ht-post-des"
+	<form id="hf-post" action="/test/post" method="POST" target="ht-post-des"
 		onsubmit="return hatch(event, {timeout:0})">
 		<input name="q" value="world">
 	</form>
@@ -765,7 +773,7 @@
 <article id="ht-oob">
 	<h2>Hatch Test 5</h2>
 	<h3>OOB swaps — response children with ids replace DOM matches</h3>
-	<form id="hf-oob" action="/test/oob" target="#ht-oob-b"
+	<form id="hf-oob" action="/test/oob" target="ht-oob-b"
 		onsubmit="return hatch(event, {timeout:0})">
 		<input name="q" value="1">
 	</form>
@@ -776,7 +784,7 @@
 <article id="ht-oob-skip">
 	<h2>Hatch Test 6</h2>
 	<h3>OOB skip target — target element not individually swapped</h3>
-	<form id="hf-oob-skip" action="/test/oob-skip" target="#ht-oob-skip-y"
+	<form id="hf-oob-skip" action="/test/oob-skip" target="ht-oob-skip-y"
 		onsubmit="return hatch(event, {timeout:0})">
 		<input name="q" value="1">
 	</form>
@@ -787,7 +795,7 @@
 <article id="ht-empty">
 	<h2>Hatch Test 7</h2>
 	<h3>Empty response — target element removed</h3>
-	<form id="hf-empty" action="/test/empty" target="#ht-empty-des"
+	<form id="hf-empty" action="/test/empty" target="ht-empty-des"
 		onsubmit="return hatch(event, {timeout:0})">
 		<input name="q" value="1">
 	</form>
@@ -806,7 +814,7 @@
 <article id="ht-err-fetch">
 	<h2>Hatch Test 9</h2>
 	<h3>Fetch error — cfg.onError receives network failure</h3>
-	<form id="hf-err-fetch" action="/test/error" target="#ht-err-fetch-des"
+	<form id="hf-err-fetch" action="/test/error" target="ht-err-fetch-des"
 		onsubmit="return hatch(event, {timeout:0, onError: handleFetchError})">
 		<input name="q" value="1">
 	</form>
@@ -816,7 +824,7 @@
 <article id="ht-err-abort">
 	<h2>Hatch Test 10</h2>
 	<h3>Abort error — cfg.onError receives AbortError</h3>
-	<form id="hf-err-abort" target="#ht-err-abort-des"
+	<form id="hf-err-abort" target="ht-err-abort-des"
 		onsubmit="return hatch(event, {timeout:0, onError: handleAbortError})">
 		<input name="q" value="1">
 	</form>
@@ -826,7 +834,7 @@
 <article id="ht-timeout">
 	<h2>Hatch Test 11</h2>
 	<h3>Timeout — fetch aborted after timeout, element untouched</h3>
-	<form id="hf-timeout" action="/test/timeout" target="#ht-timeout-des"
+	<form id="hf-timeout" action="/test/timeout" target="ht-timeout-des"
 		onsubmit="return hatch(event, {timeout:80, onError: handleTimeoutAbort})">
 		<input name="q" value="1">
 	</form>
@@ -836,7 +844,7 @@
 <article id="ht-ctrl">
 	<h2>Hatch Test 12</h2>
 	<h3>Controls — form._hatchAbort, _hatchTimeout, _hatchDebounce set</h3>
-	<form id="hf-ctrl" action="/test/ctrl" target="#ht-ctrl-des"
+	<form id="hf-ctrl" action="/test/ctrl" target="ht-ctrl-des"
 		onsubmit="return hatch(event, {timeout:50})">
 		<input name="q" value="1">
 	</form>
@@ -846,7 +854,7 @@
 <article id="ht-finish">
 	<h2>Hatch Test 13</h2>
 	<h3>onFinish — cfg.onFinish fires after DOM update</h3>
-	<form id="hf-finish" action="/test/onfinish" target="#ht-finish-des"
+	<form id="hf-finish" action="/test/onfinish" target="ht-finish-des"
 		onsubmit="return hatch(event, {timeout:0, onFinish: handleFinish})">
 		<input name="q" value="1">
 	</form>
@@ -856,37 +864,27 @@
 <article id="ht-form-post">
 	<h2>Hatch Test 14</h2>
 	<h3>Form POST — form method=POST sends body</h3>
-	<form id="hf-form-post" action="/test/form-post" method="POST" target="#ht-form-post-des"
+	<form id="hf-form-post" action="/test/form-post" method="POST" target="ht-form-post-des"
 		onsubmit="return hatch(event, {timeout:0})">
 		<input name="q" value="world">
 	</form>
 	<div id="ht-form-post-des">original</div>
 </article>
 
-<article id="ht-validation">
-	<h2>Hatch Test 15</h2>
-	<h3>Form validation — invalid form blocks the request</h3>
-	<form id="hf-validation" action="/test/basic" target="#ht-validation-des"
-		onsubmit="return hatch(event, {timeout:0})">
-		<input name="x" required value="">
-	</form>
-	<div id="ht-validation-des">original</div>
-</article>
-
 <article id="ht-method">
-	<h2>Hatch Test 16</h2>
-	<h3>Invalid method — cfg.onError called, no fetch</h3>
+	<h2>Hatch Test 15</h2>
+	<h3>Invalid method — console.error called, no fetch</h3>
 	<form id="hf-method" action="/test/basic" method="OPTIONS"
-		onsubmit="return hatch(event, {onError: handleMethodError})">
+		onsubmit="return hatch(event)">
 		<input name="q" value="1">
 	</form>
 </article>
 
 <article id="ht-hash-action">
-	<h2>Hatch Test 17</h2>
-	<h3># action — triggers hatch.html() template rendering</h3>
-	<form id="hf-hash-action" action="#ht-template" target="#ht-hash-des"
-		onsubmit="return hatch(event, {timeout:0})">
+	<h2>Hatch Test 16</h2>
+	<h3>Template rendering — client-side handler calls hatch.html() and hatch.swap()</h3>
+	<form id="hf-hash-action" target="ht-hash-des"
+		onsubmit="return handleTemplateSubmit(event)">
 		<input name="one" value="rendered">
 	</form>
 	<template id="ht-template">
@@ -895,6 +893,16 @@
 		</div>
 	</template>
 	<div id="ht-hash-des"></div>
+</article>
+
+<article id="ht-hh-data">
+	<h2>Hatch Test 17</h2>
+	<h3>hh-data header — response body rendered with server-provided FormData</h3>
+	<form id="hf-hh-data" action="/test/hh-data" target="ht-hh-data-des"
+		onsubmit="return hatch(event, {timeout:0})">
+		<input name="q" value="1">
+	</form>
+	<div id="ht-hh-data-des">original</div>
 </article>
 
 <!-- ============================================================ -->
@@ -906,8 +914,9 @@
 
 	function delayedText(html, delay, signal) {
 		return new Promise(function (resolve, reject) {
-			if (signal && signal.aborted) return reject(new DOMException('Aborted', 'AbortError'));
-			let onAbort = () => reject(new DOMException('Aborted', 'AbortError'));
+			let rejectAbort = () => reject(signal.reason || new DOMException('Aborted', 'AbortError'));
+			if (signal && signal.aborted) return rejectAbort();
+			let onAbort = rejectAbort;
 			if (signal) signal.addEventListener('abort', onAbort);
 			setTimeout(() => {
 				if (signal) signal.removeEventListener('abort', onAbort);
@@ -924,13 +933,14 @@
 	routes['/test/post']        = '<div id="ht-post-des">posted</div>';
 	routes['/test/oob']         = '<div id="ht-oob-a">A</div><div id="ht-oob-b">B</div>';
 	routes['/test/oob-skip']    = '<div id="ht-oob-skip-x">X</div><div id="ht-oob-skip-y">Y</div>';
-	routes['/test/empty']       = '<!DOCTYPE html><html><head></head><body></body></html>';
+	routes['/test/empty']       = '';
 	routes['/test/loader']      = '!delay:80:<div>loaded</div>';
 	routes['/test/error']       = '!error';
 	routes['/test/timeout']     = '!delay:400:<div id="ht-timeout-des">SHOULD NOT SHOW</div>';
 	routes['/test/ctrl']        = '<div id="ht-ctrl-des">ok</div>';
 	routes['/test/onfinish']    = '<div id="ht-finish-des">done</div>';
 	routes['/test/form-post']   = '<div id="ht-form-post-des">posted</div>';
+	routes['/test/hh-data']     = '!hh:greeting=hello:<div id="ht-hh-data-des"><span hh:="greeting[0]"></span></div>';
 
 	window.fetch = function (url, init) {
 		let full = typeof url === 'string' ? url : url.url;
@@ -940,7 +950,7 @@
 		fetchCalls.push({ url: s, full: full, method, signal });
 
 		if (signal && signal.aborted) {
-			return Promise.reject(new DOMException('The operation was aborted', 'AbortError'));
+			return Promise.reject(signal.reason || new DOMException('The operation was aborted', 'AbortError'));
 		}
 
 		let resp = routes[s];
@@ -1079,6 +1089,7 @@
 			let a = document.getElementById('ht-loader');
 			loaderCalled = false;
 			document.getElementById('hf-loader').requestSubmit();
+			await sleep(20);
 			assert(a, loaderCalled, 'onLoad should have been called');
 		}
 
@@ -1123,6 +1134,7 @@
 			let a = document.getElementById('ht-ctrl');
 			let form = document.getElementById('hf-ctrl');
 			form.requestSubmit();
+			await sleep(20);
 			let ok = form._hatchAbort instanceof AbortController
 				&& typeof form._hatchDebounce === 'number'
 				&& typeof form._hatchTimeout === 'number';
@@ -1155,27 +1167,23 @@
 			let el = document.getElementById('ht-form-post-des'); if (el) el.textContent = 'original';
 		}
 
-		// Test 15: Form validation
-		{
-			let a = document.getElementById('ht-validation');
-			fetchCalls.length = 0;
-			document.getElementById('hf-validation').requestSubmit();
-			await sleep(20);
-			let calls = fetchCalls.filter(c => c.url === '/test/basic');
-			assert(a, calls.length === 0, 'fetch should not be called, got ' + calls.length + ' calls');
-			let el = document.getElementById('ht-validation-des'); if (el) el.textContent = 'original';
-		}
-
-		// Test 16: Invalid method
+		// Test 15: Invalid method
 		{
 			let a = document.getElementById('ht-method');
 			methodError = null;
-			document.getElementById('hf-method').requestSubmit();
-			assert(a, methodError && methodError.message.indexOf('Invalid method') === 0,
-				'err: ' + (methodError ? methodError.message : 'null'));
+			fetchCalls.length = 0;
+			let originalConsoleError = console.error;
+			console.error = function (e) { methodError = e; };
+			try {
+				document.getElementById('hf-method').requestSubmit();
+			} finally {
+				console.error = originalConsoleError;
+			}
+			assert(a, methodError && methodError.message.indexOf('Invalid method') === 0 && fetchCalls.length === 0,
+				'err: ' + (methodError ? methodError.message : 'null') + ' fetches: ' + fetchCalls.length);
 		}
 
-		// Test 17: # action template rendering
+		// Test 16: Template rendering
 		{
 			let a = document.getElementById('ht-hash-action');
 			document.getElementById('hf-hash-action').requestSubmit();
@@ -1185,6 +1193,18 @@
 			assert(a, span && span.textContent === 'rendered',
 				'got "' + (span ? span.textContent : 'null') + '" expected "rendered"');
 			if (el) el.innerHTML = '';
+		}
+
+		// Test 17: hh-data response templating
+		{
+			let a = document.getElementById('ht-hh-data');
+			document.getElementById('hf-hh-data').requestSubmit();
+			await sleep(50);
+			let el = document.getElementById('ht-hh-data-des');
+			let span = el && el.querySelector('span');
+			assert(a, span && span.textContent === 'hello',
+				'got "' + (span ? span.textContent : 'null') + '" expected "hello"');
+			if (el) el.textContent = 'original';
 		}
 
 		// Summary

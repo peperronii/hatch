@@ -1,37 +1,4 @@
-function hatch(e, cfg) {	
-
-	function swap(doc, target) {
-
-		let currentTarget = null
-
-		for (const el of [...doc.children]) {
-			if (!(el instanceof HTMLElement)) {
-				continue
-			}
-
-			let id = el.getAttribute('hh-id') || el.id;
-			el.removeAttribute('hh-id');
-
-			if ( '#' + id === target) continue
-
-			currentTarget = document.getElementById(id)
-			if (currentTarget) {
-				currentTarget.replaceWith(el)
-			} else {
-				console.log("hatch | swap | out of band target not found : " + id)
-			}
-
-		}
-
-		if (target !== '') {
-			currentTarget = document.querySelector(target)
-			if (currentTarget) {
-				currentTarget.replaceWith(...doc.children)
-			} else {
-				console.warn("hatch | swap | main target not found : " + target)
-			}
-		}
-	}
+function hatch(e, cfg) {
 
 	e.preventDefault()
 
@@ -54,118 +21,96 @@ function hatch(e, cfg) {
 
 	method = method.toUpperCase()
 	if(!["GET","POST","PUT","PATCH","DELETE"].includes(method)) {
-		cfg.onError(new Error("Invalid method: " + method))
+		console.error(new Error("Invalid method: " + method))
 		return false
 	}
 
 	let data = cfg.onFormData(new FormData(form))
+	if (!(data instanceof FormData)) {
+		console.error(new Error("Returned onFormData is not a FormData: " + data))
+		return false
+	}
 
 	if (form._hatchDebounce) clearTimeout(form._hatchDebounce)
 	if (form._hatchTimeout) clearTimeout(form._hatchTimeout)
 	if (form._hatchAbort) form._hatchAbort.abort()
 
-	cfg.onLoad()
+        form._hatchAbort = new AbortController()
 
-	if (!action.startsWith('#')) {
+        let init = { signal: form._hatchAbort.signal, method }
+        let b = new URLSearchParams(data)
+        if (method === 'GET' || method === 'DELETE') {
+	        if (b.toString() !== '') {
+		        action = action + '?' + b
+	        }
+        } else {
+                init.body = b
+                init.headers = { 'Content-Type': 'application/x-www-form-urlencoded' }
+        }
 
-		form._hatchAbort = new AbortController()
+        form._hatchDebounce = setTimeout(() => {
+		cfg.onLoad(target, form)
 		if (cfg.timeout) {
 			form._hatchTimeout = setTimeout(() => form._hatchAbort.abort(new DOMException('Timeout', 'TimeoutError')), cfg.timeout)
 		}
-
-
-		let init = { signal: form._hatchAbort.signal, method }
-		let b = new URLSearchParams(data)
-		if (method === 'GET' || method === 'DELETE') {
-			action = action + '?' + b
-		} else {
-			init.body = b
-			init.headers = { 'Content-Type': 'application/x-www-form-urlencoded' }
-		}
-
-		form._hatchDebounce = setTimeout(() => {
-			fetch(action, init)
-				.then((r) => {
-					let header = r.headers.get('hh-data')
-					if (header) {
-						let searchParams = new URLSearchParams(header);
-						let newData= new FormData();
-						for (const [key, value] of searchParams.entries()) {
-							newData.append(key, value);
-						}
-						data = newData
-					} else {
-						data = null
+                fetch(action, init)
+                	.then( (r) => Promise.all([r.text(), r.headers.get('hh-data')]) )
+                        .then(([html, dataHeader]) => {
+	                        const doc = document.createRange().createContextualFragment(html)
+	                        // for dataHeader === "" we still want to process that
+	                        if (dataHeader !== null) {
+		                        let searchParams = new URLSearchParams(dataHeader)
+					let newData = new FormData();
+					for (const [key, value] of searchParams.entries()) {
+						newData.append(key, value);
 					}
-					return r.text()
-				})
-				.then((html) => {
-					let template = document.createElement('template')
-					template.innerHTML = html
-					let [hatched, errors] = hatch.html(template, data)
+					let [newDoc, errors] = hatch.html(doc, newData, {})
 					if (errors.length !== 0) {
-						throw new Error(errors.join('\n'))
+						console.error(errors)
 					}
-					swap(hatched, target)
-				})
-				.catch(cfg.onError)
-				.finally(cfg.onFinish)
-		}, cfg.debounce)
+	                                hatch.swap(newDoc, target)
+	                        } else {
+		                        hatch.swap(doc, target)
+	                        }
+                        })
+                        .catch((error) => cfg.onError(error, target, form))
+                        .finally(() => cfg.onFinish(target, form))
+        }, cfg.debounce)
 
-	} else {
-		let html = document.querySelector(action)
+	return false
+}
 
-		form._hatchAbort = new AbortController()
-		if (cfg.timeout) {
-			form._hatchTimeout = setTimeout(
-				() => form._hatchAbort.abort(new DOMException('Timeout', 'TimeoutError')),
-				cfg.timeout
-			)
-		}
-
-		form._hatchDebounce = setTimeout(() => {
-			new Promise((resolve, reject) => {
-				let [hatched, errors] = hatch.html(html, data)
-				if (errors.length) reject(new Error(errors.join('\n')))
-				else resolve(hatched)
-			})
-			.then(hatched => swap(hatched, target))
-			.catch(cfg.onError)
-			.finally(cfg.onFinish)
-		}, cfg.debounce)
+hatch.swap = (doc, target) => {
+	for (const el of [...doc.children]) {
+		let id = el.getAttribute('hh-id') || el.id;
+		el.removeAttribute('hh-id');
+		if (id === target) continue
+		document.getElementById(id)?.replaceWith(el)
 	}
-
-	return false;
+	if (target && target !== '') {
+		document.getElementById(target)?.replaceWith(...doc.children)
+	}
 }
 
 hatch.cfg = {
 	debounce: 0,
-	timeout: 2000,
-	onError: (error) => { 
-		if (error.name === 'AbortError') {
+	timeout: 0,
+
+	onError: (error, target, form) => {
+		if (error?.name === 'AbortError') {
 			console.warn("hatch | " + error.message)
+			return
 		}
-		else {
-			console.error("hatch | " + error.message)
-		}
+		console.error("hatch | " + error.message)
 	},
 
-	onValidation: (form) => {
-		if (!form.reportValidity()) {
-			return false
-		}
-		return true
-	},
+	onValidation: (form) => form.reportValidity(),
 
-	onFormData: (data) => {
-		if (data.keys().next().done) {
-			return null
-		}
-		return data
-	},
+	onFormData: (data) => data,
 
-	onLoad: () => {},
-	onFinish: () => {},
+	onLoad: (target, form) => {},
+
+	onFinish: (target, form) => {},
 }
 
 hatch.html = function (html, data, context = {}) {
@@ -673,7 +618,7 @@ hatch.html = function (html, data, context = {}) {
 					}
 				}
 
-				// I know the flow is weird but putting if outside the loop is generally faster
+				// I know the flow is weird but putting "if" outside the loop is generally faster
 				// I will profile it later
 				let count = contextVals.length
 				if (key ===  null) {
@@ -748,11 +693,9 @@ hatch.html = function (html, data, context = {}) {
 		}
 	}
 
-	if (html instanceof HTMLElement) {
-		if (html instanceof HTMLTemplateElement) {
-			html = html.content
-		}
-	} else {
+	if (html instanceof HTMLTemplateElement) {
+		html = html.content
+	} else if (!(html instanceof HTMLElement || html instanceof DocumentFragment)) {
 		err(html + " is not a HTML element")
 		return [null, errors]
 	}
@@ -762,7 +705,28 @@ hatch.html = function (html, data, context = {}) {
 		hatched = html.cloneNode(false)
 		processChildren(html, hatched)
 	} else {
-		hatched = html.cloneNode(true)
+		err(data + " is not a FormData object")
+		return [null, errors]
 	}
 	return [hatched, errors]
 }
+
+document.addEventListener("DOMContentLoaded", async function() {
+	const match = document.cookie.match(new RegExp('(^|; )' + 'hh-data' + '=([^;]*)'));
+	const cookie = match ? decodeURIComponent(match[2]) : null;
+	if (cookie) {
+		let searchParams = new URLSearchParams(cookie);
+		let data = new FormData();
+		for (const [key, value] of searchParams.entries()) {
+			data.append(key, value);
+		}
+
+		let [newBody, errors] = hatch.html(document.body, data, {})
+
+		if (errors.length !== 0) {
+			console.error(errors)
+		}
+
+		document.body.replaceWith(newBody)
+	}
+});
